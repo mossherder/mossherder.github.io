@@ -58,6 +58,45 @@
             box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
             z-index: 1000;
         }
+        button {
+            /* Touch-friendly sizing */
+            height: 50px;
+            min-width: 60px;
+            
+            /* Clean iOS-style appearance */
+            background-color: #f2f2f7; /* Light gray native feel */
+            border: none;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #007aff; /* Standard iOS Blue */
+            
+            /* Center the text/icons */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            
+            /* Prevent gray highlight on tap in Safari */
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        /* Make the Play button even more prominent */
+        #play-pause {
+            min-width: 80px;
+            background-color: #007aff;
+            color: white;
+        }
+        
+        /* Active state for physical feedback when pressed */
+        button:active {
+            background-color: #d1d1d6;
+            transform: scale(0.98);
+        }
+        
+        #play-pause:active {
+            background-color: #0056b3;
+        }
     </style>
 </head>
 <body>
