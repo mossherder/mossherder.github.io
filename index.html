@@ -243,14 +243,32 @@
         
         // 4. Triggered when it's actually playing
         audio.addEventListener('playing', () => {
+            retryCount = 0; 
             setStatus("Playing");
             loadingPercent.hidden = true;
         });
         
         // 5. Triggered if the link is dead or format is unsupported
+        let retryCount = 0;
+        const MAX_RETRIES = 3;
+        
         audio.addEventListener('error', () => {
-            setStatus("Error: Archive.org link failed");
-            loadingPercent.hidden = true;
+            if (retryCount < MAX_RETRIES) {
+                retryCount++;
+                setStatus(`Connection lost. Retry ${retryCount}/${MAX_RETRIES}...`);
+                
+                // Short delay before retrying to give the server a "breather"
+                setTimeout(() => {
+                    const currentSrc = audio.src;
+                    audio.src = ''; // Clear source
+                    audio.src = currentSrc; // Re-assign same source to force reload
+                    audio.load();
+                    audio.play().catch(e => console.log("Retry play blocked"));
+                }, 2000); 
+            } else {
+                setStatus("Error: Archive.org is not responding.");
+                loadingPercent.hidden = true;
+            }
         });
         
         // 6. Handle Manual Pause
