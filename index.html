@@ -46,8 +46,12 @@
 <body>
     <div id="track-info" style="text-align: center; margin-bottom: 20px;">
         <h2 style="margin: 0; font-size: 1.2rem;">
-        <span id="song-title">Loading Show...</span>
-        <span id="loading-percent" style="font-size: 0.8rem; color: #888; margin-left: 8px;" hidden>0%</span>        </h2>
+            <span id="song-title">Loading Show...</span>
+        </h2>
+        <p style="margin: 5px 0 0; font-size: 0.8rem; color: #888;">
+            <span id="status-label">Initializing</span> 
+            <span id="loading-percent" hidden>0%</span>
+        </p>
         <p id="show-metadata" style="margin: 5px 0 0; font-size: 0.9rem; color: #666;">--</p>
     </div>
     
@@ -204,6 +208,55 @@
                 });
             }
         }
+
+        const statusLabel = document.getElementById('status-label');
+
+        // Update Status Text
+        const setStatus = (msg) => { statusLabel.innerText = msg; };
+        
+        // 1. Triggered when the browser starts looking for the file
+        audio.addEventListener('loadstart', () => {
+            setStatus("Connecting to Archive.org...");
+            loadingPercent.hidden = false;
+        });
+        
+        // 2. Triggered when the browser is actively downloading
+        audio.addEventListener('progress', () => {
+            setStatus("Buffering...");
+            if (audio.duration > 0) {
+                for (let i = 0; i < audio.buffered.length; i++) {
+                    if (audio.buffered.start(audio.buffered.length - 1 - i) < audio.currentTime) {
+                        const loaded = audio.buffered.end(audio.buffered.length - 1 - i);
+                        const percent = Math.round((loaded / audio.duration) * 100);
+                        loadingPercent.innerText = `${percent}%`;
+                        break;
+                    }
+                }
+            }
+        });
+        
+        // 3. Triggered when playback stalls due to slow connection
+        audio.addEventListener('waiting', () => {
+            setStatus("Stalled: Waiting for data...");
+            loadingPercent.hidden = false;
+        });
+        
+        // 4. Triggered when it's actually playing
+        audio.addEventListener('playing', () => {
+            setStatus("Playing");
+            loadingPercent.hidden = true;
+        });
+        
+        // 5. Triggered if the link is dead or format is unsupported
+        audio.addEventListener('error', () => {
+            setStatus("Error: Archive.org link failed");
+            loadingPercent.hidden = true;
+        });
+        
+        // 6. Handle Manual Pause
+        audio.addEventListener('pause', () => {
+            if (!audio.ended) setStatus("Paused");
+        });
     </script>
     
 </body>
