@@ -27,6 +27,10 @@
     </style>
 </head>
 <body>
+    <div id="track-info" style="text-align: center; margin-bottom: 20px;">
+        <h2 id="song-title" style="margin: 0; font-size: 1.2rem;">Loading...</h2>
+        <p id="show-metadata" style="margin: 5px 0 0; font-size: 0.9rem; color: #666;">--</p>
+    </div>
     <!--PLAYER-->
     <audio id="audio-player" src="https://archive.org/download/gd1977-05-08.shure57.stevenson.29303.flac16/gd1977-05-08d01t07.mp3"></audio>
     
@@ -38,6 +42,39 @@
 
     
     <script>
+        // 1. The identifier and specific file from your URL
+        const identifier = "gd1977-05-08.shure57.stevenson.29303.flac16";
+        const fileName = "gd1977-05-08d01t07.flac"; // We'll search for this in the file list
+        
+        async function fetchMetadata() {
+            try {
+                // Fetch the JSON metadata from the IA API
+                const response = await fetch(`https://archive.org/metadata/${identifier}`);
+                const data = await response.json();
+        
+                // 2. Pull the Show Info (Year/Location)
+                const date = data.metadata.date || "Unknown Date";
+                const venue = data.metadata.venue || "";
+                const location = data.metadata.coverage || ""; // "Coverage" is often used for City/State
+                
+                const showSubtitle = `${date} • ${venue} ${location}`.trim();
+        
+                // 3. Find the specific song title within the files array
+                const fileData = data.files.find(f => f.name === fileName);
+                const songTitleText = fileData && fileData.title ? fileData.title : fileName;
+        
+                // Update the UI
+                document.getElementById('song-title').innerText = songTitleText;
+                document.getElementById('show-metadata').innerText = showSubtitle;
+        
+            } catch (error) {
+                console.error("Error fetching metadata:", error);
+                document.getElementById('song-title').innerText = "Error loading info";
+            }
+        }
+        
+        // Run the fetch when the script loads
+        fetchMetadata();
         const audio = document.getElementById('audio-player');
         const seekSlider = document.getElementById('seek-slider');
         const playBtn = document.getElementById('play-pause');
