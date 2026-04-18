@@ -93,24 +93,19 @@
                 console.error("Error loading show:", error);
             }
         }
+        function togglePlay() {
+            if (!sessionStarted) sessionStarted = true; // Unlock audio session
         
-        function loadTrack(index) {
-            if (index < 0 || index >= playlist.length) return;
-            
-            currentIndex = index;
-            const track = playlist[currentIndex];
-            
-            // Set source and update Title
-            audio.src = `https://archive.org/download/${identifier}/${track.name}`;
-            document.getElementById('song-title').innerText = track.title || track.name;
-            
-            // Auto-play when switching tracks (if already playing)
-            if (!audio.paused || currentIndex > 0) {
+            if (audio.paused) {
                 audio.play();
                 playBtn.innerText = "Pause";
+            } else {
+                audio.pause();
+                playBtn.innerText = "Play";
             }
         }
         
+        // Next/Prev functions now naturally trigger loadTrack
         function nextTrack() {
             if (currentIndex < playlist.length - 1) {
                 loadTrack(currentIndex + 1);
@@ -123,16 +118,12 @@
             }
         }
         
-        // Control Logic
-        function togglePlay() {
-            if (audio.paused) {
-                audio.play();
-                playBtn.innerText = "Pause";
-            } else {
-                audio.pause();
-                playBtn.innerText = "Play";
+        // This event is key for the "lean on autoplay" behavior
+        audio.addEventListener('ended', () => {
+            if (currentIndex < playlist.length - 1) {
+                nextTrack();
             }
-        }
+        });
         
         function changeTime(amount) {
             audio.currentTime += amount;
@@ -187,6 +178,9 @@
             loadingPercent.hidden = true;
         });
         
+        // Variable to track if the user has started the "audio session"
+        let sessionStarted = false;
+        
         function loadTrack(index) {
             if (index < 0 || index >= playlist.length) return;
             
@@ -196,17 +190,19 @@
             currentIndex = index;
             const track = playlist[currentIndex];
             
-            // Resetting the source triggers the browser to open a new stream
+            // Update Source and UI
             audio.src = `https://archive.org/download/${identifier}/${track.name}`;
             document.getElementById('song-title').innerText = track.title || track.name;
             
-            // .play() tells the browser: "Start downloading and playing ASAP"
-            audio.play().catch(e => {
-                console.log("Playback delayed until user clicks Play");
-                loadingPercent.hidden = true; // Hide if blocked by browser policy
-            });
-            
-            playBtn.innerText = "Pause";
+            // Only attempt to autoplay if the user has interacted at least once
+            if (sessionStarted) {
+                audio.play().then(() => {
+                    playBtn.innerText = "Pause";
+                }).catch(e => {
+                    console.log("Autoplay blocked. User must click Play.");
+                    playBtn.innerText = "Play";
+                });
+            }
         }
     </script>
     
