@@ -46,9 +46,8 @@
 <body>
     <div id="track-info" style="text-align: center; margin-bottom: 20px;">
         <h2 style="margin: 0; font-size: 1.2rem;">
-            <span id="song-title">Loading Show...</span>
-            <span id="loading-spinner" class="spinner" hidden></span>
-        </h2>
+        <span id="song-title">Loading Show...</span>
+        <span id="loading-percent" style="font-size: 0.8rem; color: #888; margin-left: 8px;" hidden>0%</span>        </h2>
         <p id="show-metadata" style="margin: 5px 0 0; font-size: 0.9rem; color: #666;">--</p>
     </div>
     
@@ -155,35 +154,58 @@
         
         // Initial Load
         fetchShow();
-
-        const spinner = document.getElementById('loading-spinner');
-
-        // Show spinner when the browser needs to buffer
+        
+        const loadingPercent = document.getElementById('loading-percent');
+        
+        // Update percentage as the file downloads
+        audio.addEventListener('progress', () => {
+            if (audio.duration > 0) {
+                for (let i = 0; i < audio.buffered.length; i++) {
+                    // Check the buffer range that contains the current play time
+                    if (audio.buffered.start(audio.buffered.length - 1 - i) < audio.currentTime) {
+                        const loaded = audio.buffered.end(audio.buffered.length - 1 - i);
+                        const percent = Math.round((loaded / audio.duration) * 100);
+                        loadingPercent.innerText = `${percent}%`;
+                        break;
+                    }
+                }
+            }
+        });
+        
+        // Show/Hide logic
         audio.addEventListener('waiting', () => {
-            spinner.hidden = false;
+            loadingPercent.hidden = false;
         });
         
-        // Hide spinner when enough data is buffered to play
+        // Hide percentage as soon as it's possible to start playing
         audio.addEventListener('canplay', () => {
-            spinner.hidden = true;
+            loadingPercent.hidden = true;
         });
         
-        // Also hide spinner if playing or if an error occurs
-        audio.addEventListener('playing', () => spinner.hidden = true);
-        audio.addEventListener('error', () => spinner.hidden = true);
+        // Use 'playing' as a backup to hide the percentage
+        audio.addEventListener('playing', () => {
+            loadingPercent.hidden = true;
+        });
         
-        // Update loadTrack to show spinner immediately when a new source is set
         function loadTrack(index) {
             if (index < 0 || index >= playlist.length) return;
             
-            spinner.hidden = false; // Show immediately on click
+            loadingPercent.innerText = "0%";
+            loadingPercent.hidden = false;
+            
             currentIndex = index;
             const track = playlist[currentIndex];
             
+            // Resetting the source triggers the browser to open a new stream
             audio.src = `https://archive.org/download/${identifier}/${track.name}`;
             document.getElementById('song-title').innerText = track.title || track.name;
             
-            audio.play().catch(e => console.log("Auto-play prevented"));
+            // .play() tells the browser: "Start downloading and playing ASAP"
+            audio.play().catch(e => {
+                console.log("Playback delayed until user clicks Play");
+                loadingPercent.hidden = true; // Hide if blocked by browser policy
+            });
+            
             playBtn.innerText = "Pause";
         }
     </script>
