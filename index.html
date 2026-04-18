@@ -23,6 +23,7 @@
             -webkit-text-size-adjust: 100%;
             /* Smoother scrolling on iOS */
             -webkit-overflow-scrolling: touch;
+            padding-bottom: 150px;
         }
         .spinner {
             display: inline-block;
@@ -41,30 +42,49 @@
         }
         
         [hidden] { display: none !important; }
+        .player-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #ffffff;
+            border-top: 1px solid #eee;
+            padding: 15px 20px;
+            
+            /* Crucial for iPhone: adds extra padding for the "swipe bar" */
+            padding-bottom: calc(15px + env(safe-area-inset-bottom));
+            
+            /* Adds a slight shadow so it pops against the content behind it */
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+            z-index: 1000;
+        }
     </style>
 </head>
 <body>
-    <div id="track-info" style="text-align: center; margin-bottom: 20px;">
-        <h2 style="margin: 0; font-size: 1.2rem;">
-            <span id="song-title">Loading Show...</span>
-        </h2>
-        <p style="margin: 5px 0 0; font-size: 0.8rem; color: #888;">
-            <span id="status-label">Initializing</span> 
-            <span id="loading-percent" hidden>0%</span>
-        </p>
-        <p id="show-metadata" style="margin: 5px 0 0; font-size: 0.9rem; color: #666;">--</p>
-    </div>
-    
     <audio id="audio-player"></audio>
     
-    <input type="range" id="seek-slider" value="0" max="100" step="0.1" style="width: 100%;">
-    
-    <div style="display: flex; justify-content: space-around; align-items: center; margin-top: 15px;">
-        <button onclick="prevTrack()">Prev</button>
-        <button onclick="changeTime(-10)">-10s</button>
-        <button id="play-pause" onclick="togglePlay()" style="font-weight: bold; min-width: 60px;">Play</button>
-        <button onclick="changeTime(10)">+10s</button>
-        <button onclick="nextTrack()">Next</button>
+    <div class="player-container">
+        <div id="track-info" style="text-align: center; margin-bottom: 20px;">
+            <h2 style="margin: 0; font-size: 1.2rem;">
+                <span id="song-title">Loading Show...</span>
+            </h2>
+            <p style="margin: 5px 0 0; font-size: 0.8rem; color: #888;">
+                <span id="status-label">Initializing</span> 
+                <span id="loading-percent" hidden>0%</span>
+            </p>
+            <p id="show-metadata" style="margin: 5px 0 0; font-size: 0.9rem; color: #666;">--</p>
+        </div>
+        
+        
+        <input type="range" id="seek-slider" value="0" max="100" step="0.1" style="width: 100%;">
+        
+        <div style="display: flex; justify-content: space-around; align-items: center; margin-top: 15px;">
+            <button onclick="prevTrack()">Prev</button>
+            <button onclick="changeTime(-10)">-10s</button>
+            <button id="play-pause" onclick="togglePlay()" style="font-weight: bold; min-width: 60px;">Play</button>
+            <button onclick="changeTime(10)">+10s</button>
+            <button onclick="nextTrack()">Next</button>
+        </div>
     </div>
     
     <script>
