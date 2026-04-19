@@ -187,12 +187,52 @@
             padding: 0 10px;
             box-sizing: border-box; /* Prevents padding from breaking width */
         }
+
+        #list-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            /* Subtract the height of your player-container (approx 180px) */
+            bottom: 180px; 
+            overflow-y: auto;
+            background: #fff;
+            /* Smooth scrolling for iOS */
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        .list-item {
+            padding: 16px 20px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .list-item:active {
+            background-color: #f2f2f7;
+        }
+        
+        .list-item .primary-text {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #1c1c1e;
+        }
+        
+        .list-item .secondary-text {
+            font-size: 0.85rem;
+            color: #8e8e93;
+        }
     </style>
 </head>
 <body>
-    <audio id="audio-player"></audio>
+    <div id="list-container">
+        <div id="results-list"></div>
+    </div>
     
     <div class="player-container">
+        <audio id="audio-player"></audio>
+        
         <div id="track-info" style="text-align: center; margin-bottom: 20px;">
             <h2 style="margin: 0; font-size: 1.2rem;">
                 <span id="song-title">Loading Show...</span>
@@ -229,6 +269,9 @@
     </div>
     
     <script>
+        let currentPlaylist = []; // This stores the current queue of show identifiers
+        let playlistIndex = 0;    // Where we are in the current queue
+        
         const audio = document.getElementById('audio-player');
         const playBtn = document.getElementById('play-pause');
         const seekSlider = document.getElementById('seek-slider');
@@ -492,6 +535,114 @@
             
             renderList("");
         }
+
+        // Function to handle clicking a result
+        function playFromList(index, fullList) {
+            // 1. Set the global playlist to the current search results
+            // We only map the identifiers (show[1])
+            currentPlaylist = fullList.map(item => item.id || item[1]);
+            playlistIndex = index;
+        
+            // 2. Start the first one
+            loadShow(currentPlaylist[playlistIndex]);
+        }
+        
+        function renderList(query = "") {
+            const listElement = document.getElementById('results-list');
+            const q = query.toLowerCase().trim();
+            listElement.innerHTML = ""; // Clear current view
+        
+            if (currentView === 'shows') {
+                // 1. Filter the master show list
+                lastFilteredResults = MASTER_DATA_CLEANED.shows.filter(show => 
+                    show[0].includes(q) || show[2].toLowerCase().includes(q)
+                ).slice(0, 100); 
+        
+                // 2. Render each show
+                lastFilteredResults.forEach((show, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'list-item';
+                    item.innerHTML = `
+                        <span class="primary-text">${show[0]}</span>
+                        <span class="secondary-text">${show[2]}</span>
+                    `;
+                    
+                    // When clicked, treat the current filtered results as the playlist
+                    item.onclick = () => {
+                        currentPlaylist = lastFilteredResults.map(s => s[1]); // Map to identifiers
+                        playlistIndex = index;
+                        loadShow(currentPlaylist[playlistIndex]);
+                        closeSearch(); // Optional: close search bar once playing starts
+                    };
+                    listElement.appendChild(item);
+                });
+        
+            } else {
+                // 1. Filter the song names (the keys in MASTER_DATA.songs)
+                const songNames = Object.keys(MASTER_DATA_CLEANED.songs);
+                const filteredSongNames = songNames.filter(name => 
+                    name.toLowerCase().includes(q)
+                ).slice(0, 100);
+        
+                // 2. Render each song
+                filteredSongNames.forEach(name => {
+                    const showCount = MASTER_DATA.songs[name].length;
+                    const item = document.createElement('div');
+                    item.className = 'list-item';
+                    item.innerHTML = `
+                        <span class="primary-text">${name}</span>
+                        <span class="secondary-text">${showCount} versions available</span>
+                    `;
+                    
+                    // Clicking a song drills down into its versions
+                    item.onclick = () => showVersions(name);
+                    listElement.appendChild(item);
+                });
+            }
+            
+            // Always scroll back to top on search
+            document.getElementById('list-container').scrollTop = 0;
+        }
+
+        function showVersions(songName) {
+            const listElement = document.getElementById('results-list');
+            const indices = MASTER_DATA.songs[songName];
+            
+            // Map indices to actual show data
+            const versions = indices.map(idx => MASTER_DATA.shows[idx]);
+            lastFilteredResults = versions; // Update current playlist context
+        
+            listElement.innerHTML = `
+                <div class="list-item" style="background:#f9f9f9; color:#007aff;" onclick="renderList()"> 
+                    <strong>← Back to all songs</strong>
+                </div>
+                <div style="padding: 10px 20px; font-size: 0.8rem; color: #888; background: #fff;">
+                    Showing all versions of: ${songName}
+                </div>
+            `;
+        
+            versions.forEach((show, index) => {
+                const item = document.createElement('div');
+                item.className = 'list-item';
+                item.innerHTML = `
+                    <span class="primary-text">${show[0]}</span>
+                    <span class="secondary-text">${show[2]}</span>
+                `;
+                
+                item.onclick = () => {
+                    currentPlaylist = versions.map(v => v[1]);
+                    playlistIndex = index;
+                    loadShow(currentPlaylist[playlistIndex]);
+                    closeSearch();
+                };
+                listElement.appendChild(item);
+            });
+        }
+        
+        // Hook into the search bar from our previous sliding-search UI
+        document.getElementById('search-bar').addEventListener('input', (e) => {
+            renderList(e.target.value);
+        });
     </script>
     
 </body>
