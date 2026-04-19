@@ -97,6 +97,65 @@
         #play-pause:active {
             background-color: #0056b3;
         }
+
+        .footer-controls {
+            position: relative;
+            height: 60px;
+            overflow: hidden; /* Clips the search bar when it's off-screen */
+            background: #fff;
+            border-top: 1px solid #eee;
+        }
+        
+        .control-row {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        /* Navigation State */
+        #nav-mode {
+            justify-content: space-around;
+        }
+        
+        /* Search State */
+        #search-mode {
+            background: #fff;
+            gap: 10px;
+        }
+        
+        .search-hidden {
+            transform: translateX(100%); /* Pushed off to the right */
+        }
+        
+        .nav-hidden {
+            transform: translateX(-100%); /* Pushed off to the left */
+        }
+        
+        /* Styling the Search Input */
+        #search-bar {
+            flex: 1;
+            height: 40px;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            padding: 0 15px;
+            font-size: 1rem;
+            outline: none;
+            -webkit-appearance: none; /* Prevents iOS default styling */
+        }
+        
+        #close-search {
+            background: none;
+            color: #888;
+            font-size: 1.2rem;
+            width: 40px !important;
+            min-width: 40px;
+        }
     </style>
 </head>
 <body>
@@ -125,9 +184,17 @@
             <button onclick="nextTrack()">Next</button>
         </div>
 
-        <div class="nav-bar" style="display: flex; border-top: 1px solid #eee; background: #fff;">
-            <button class="nav-btn" onclick="switchView('shows')" style="flex: 1; border-radius: 0; background: none;">Shows</button>
-            <button class="nav-btn" onclick="switchView('songs')" style="flex: 1; border-radius: 0; background: none;">Songs</button>
+        <div class="footer-controls">
+            <div id="nav-mode" class="control-row">
+                <button class="nav-btn active" onclick="switchView('shows')">Shows</button>
+                <button id="search-trigger" class="nav-btn" onclick="toggleSearch(true)">🔍 Search</button>
+                <button class="nav-btn" onclick="switchView('songs')">Songs</button>
+            </div>
+        
+            <div id="search-mode" class="control-row search-hidden">
+                <input type="text" id="search-bar" placeholder="Filter..." autocomplete="off">
+                <button id="close-search" onclick="toggleSearch(false)">✕</button>
+            </div>
         </div>
     </div>
     
@@ -339,6 +406,48 @@
         audio.addEventListener('pause', () => {
             if (!audio.ended) setStatus("Paused");
         });
+
+
+        function toggleSearch(show) {
+            const navMode = document.getElementById('nav-mode');
+            const searchMode = document.getElementById('search-mode');
+            const searchInput = document.getElementById('search-bar');
+        
+            if (show) {
+                // Slide Search In, Slide Nav Out
+                navMode.classList.add('nav-hidden');
+                searchMode.classList.remove('search-hidden');
+                
+                // Auto-focus the input so the keyboard pops up immediately
+                setTimeout(() => searchInput.focus(), 300);
+            } else {
+                // Slide Nav In, Slide Search Out
+                navMode.classList.remove('nav-hidden');
+                searchMode.classList.add('search-hidden');
+                
+                // Clear search when closing
+                searchInput.value = "";
+                renderList(""); 
+                searchInput.blur(); // Hide keyboard
+            }
+        }
+        
+        // Update switchView to reflect the active tab
+        function switchView(view) {
+            currentView = view;
+            
+            // Highlight active button
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if(btn.innerText.toLowerCase() === view) btn.classList.add('active');
+            });
+        
+            // Update placeholder text dynamically
+            const bar = document.getElementById('search-bar');
+            bar.placeholder = view === 'shows' ? "Filter shows..." : "Search songs...";
+            
+            renderList("");
+        }
     </script>
     
 </body>
