@@ -344,8 +344,8 @@
                 
                 // 5. Update UI with show info
                 const showTitle = data.metadata.title || identifier;
-                document.getElementById('track-title').innerText = currentTracks[trackIndex].title;
-                document.getElementById('show-info').innerText = showTitle;
+                document.getElementById('song-title').innerText = currentTracks[trackIndex].title;
+                document.getElementById('show-metadata').innerText = showTitle;
         
                 // 6. Load and Play
                 audio.src = currentTracks[trackIndex].url;
