@@ -209,6 +209,9 @@
             display: flex;
             flex-direction: column;
             gap: 4px;
+            /* This is a massive performance boost for long lists */
+            content-visibility: auto;
+            contain-intrinsic-size: 60px; /* Approximate height of one row */
         }
         
         .list-item:active {
@@ -812,17 +815,37 @@
             renderList(e.target.value);
         });
 
+        let lastScrollTop = 0;
+        
         document.getElementById('list-container').addEventListener('scroll', function() {
             const container = this;
+            const currentST = container.scrollTop;
+
+            // 1. Ignore "Bounce" at the top (iOS can have negative scrollTop)
+            if (currentST <= 0) {
+                lastScrollTop = 0;
+                return;
+            }
+        
+            // 2. Only run logic if we are scrolling DOWN
+            if (currentST <= lastScrollTop) {
+                lastScrollTop = currentST;
+                return;
+            }
+            lastScrollTop = currentST;
             
-            // Check if we are near the bottom
-            // scrollHeight (total height) - scrollTop (position) === clientHeight (visible window)
-            if (container.scrollTop + container.clientHeight >= container.scrollHeight - 100) {
-                // Only trigger if we aren't in a "Drill Down" view (like viewing tracks of a show)
-                // You can track this with a simple boolean
-                if (isBrowsingMainList) { 
+            // 3. Existing Guards (End of data, already loading, etc.)
+            if (isLoadingMore || !isBrowsingMainList || isAtEnd) return;
+        
+            // 4. Threshold check
+            if (currentST + container.clientHeight >= container.scrollHeight - 200) {
+                isLoadingMore = true;
+                
+                // Use a slight delay to let the scroll animation finish
+                setTimeout(() => {
                     renderList(lastSearchQuery, true);
-                }
+                    isLoadingMore = false;
+                }, 30);
             }
         });
     </script>
