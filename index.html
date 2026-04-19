@@ -303,68 +303,64 @@
         }
 
         async function loadShow(identifier) {
-            if (!identifier) return;
-        
-            console.log(`Loading show: ${identifier}`);
-            setStatus("Loading show metadata...");
-            
-            // 1. Clear current state to provide instant feedback
-            audio.pause();
-            audio.src = "";
-            document.getElementById('play-pause').innerText = "Loading...";
+            const listElement = document.getElementById('results-list');
+            listElement.innerHTML = `<div class="list-item">Loading tracklist...</div>`;
         
             try {
-                // 2. Fetch metadata from Internet Archive
                 const response = await fetch(`https://archive.org/metadata/${identifier}`);
                 const data = await response.json();
         
-                if (!data.files || data.files.length === 0) {
-                    throw new Error("No files found for this show.");
-                }
-        
-                // 3. Filter for audio files (VBR MP3 is usually the fastest to stream)
-                // We sort them by name to ensure they play in correct track order
+                // Filter and Sort tracks
                 const audioFiles = data.files
                     .filter(f => f.format === 'VBR MP3' || f.format === 'MP3')
                     .sort((a, b) => a.name.localeCompare(b.name));
         
-                if (audioFiles.length === 0) {
-                    throw new Error("No MP3 files available for this source.");
-                }
-        
-                // 4. Update Global Audio State
-                // 'currentTracks' should be a global array you define at the top of app.js
                 currentTracks = audioFiles.map(file => ({
                     title: file.title || file.name,
-                    url: `https://archive.org/download/${identifier}/${file.name}`,
-                    trackNum: file.track || ""
+                    url: `https://archive.org/download/${identifier}/${file.name}`
                 }));
         
-                trackIndex = 0; // Start at the first song of the show
-                
-                // 5. Update UI with show info
-                const showTitle = data.metadata.title || identifier;
-                document.getElementById('song-title').innerText = currentTracks[trackIndex].title;
-                document.getElementById('show-metadata').innerText = showTitle;
+                // Render the Song List
+                listElement.innerHTML = `
+                    <div class="list-item" style="color:#007aff; font-weight:bold;" onclick="renderList()">
+                        ← Back to Shows
+                    </div>
+                    <div style="padding:10px 20px; background:#f8f8f8; font-size:0.8rem; color:#666;">
+                        ${data.metadata.title || identifier}
+                    </div>
+                `;
         
-                // 6. Load and Play
-                audio.src = currentTracks[trackIndex].url;
-                audio.load();
-                
-                // Play returns a promise; we handle the browser's autoplay block potential
-                audio.play().then(() => {
-                    document.getElementById('play-pause').innerText = "Pause";
-                    setStatus("Playing");
-                }).catch(e => {
-                    console.log("Autoplay prevented or interrupted:", e);
-                    document.getElementById('play-pause').innerText = "Play";
+                currentTracks.forEach((track, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'list-item';
+                    item.innerHTML = `<span class="primary-text">${track.title}</span>`;
+                    
+                    item.onclick = () => playTrack(index);
+                    listElement.appendChild(item);
                 });
         
-            } catch (error) {
-                console.error("Error loading show:", error);
-                setStatus("Error loading show.");
-                document.getElementById('play-pause').innerText = "Play";
+            } catch (e) {
+                listElement.innerHTML = `<div class="list-item">Error loading tracks.</div>`;
             }
+        }
+
+        function playTrack(index) {
+            if (index < 0 || index >= currentTracks.length) return;
+            
+            trackIndex = index;
+            const track = currentTracks[trackIndex];
+        
+            // Update UI
+            document.getElementById('track-title').innerText = track.title;
+            
+            // Audio logic
+            audio.src = track.url;
+            audio.play();
+            isPlaying = true;
+            document.getElementById('play-pause').innerText = "Pause";
+            
+            // Close search/list if on mobile to show player better (Optional)
+            // closeSearch(); 
         }
         
         function togglePlay() {
@@ -379,22 +375,20 @@
             }
         }
         
-        // Next/Prev functions now naturally trigger loadTrack
         function nextTrack() {
-            if (playlistIndex < currentPlaylist.length - 1) {
-                playlistIndex++;
-                loadShow(currentPlaylist[playlistIndex]);
-            } else {
-                setStatus("End of Search Results");
+            if (trackIndex < currentTracks.length - 1) {
+                playTrack(trackIndex + 1);
             }
         }
         
         function prevTrack() {
-            if (playlistIndex > 0) {
-                playlistIndex--;
-                loadShow(currentPlaylist[playlistIndex]);
+            if (trackIndex > 0) {
+                playTrack(trackIndex - 1);
             }
         }
+        
+        // Auto-advance when song ends
+        audio.onended = () => nextTrack();
         
         // This event is key for the "lean on autoplay" behavior
         audio.addEventListener('ended', () => {
