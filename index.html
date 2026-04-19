@@ -869,6 +869,25 @@
             // If you have a search overlay or drawer, make sure it's open
             // openSearch(); 
         }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // 1. Set the default view
+            currentView = 'shows';
+            
+            // 2. Ensure the toggle UI reflects 'shows' (if you have a toggle button)
+            const showsToggle = document.getElementById('toggle-shows'); // Update ID if different
+            if (showsToggle) showsToggle.classList.add('active');
+        
+            // 3. Kick off the initial render
+            // This will grab the first 50 shows from MASTER_DATA_CLEANED
+            renderList(""); 
+
+            // Inside your DOMContentLoaded listener:
+            document.getElementById('show-metadata').innerText = "Select a show to begin";
+            document.getElementById('track-title').innerText = "Grateful Dead Player";
+            
+            console.log("App initialized in Shows mode.");
+        });
     </script>
     
 </body>
