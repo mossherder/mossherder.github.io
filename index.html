@@ -604,34 +604,6 @@
             searchInput.value = "";
             searchInput.blur();
         }
-        
-        // Update switchView to reflect the active tab
-        function switchView(view) {
-            currentView = view;
-            
-            // Highlight active button
-            document.querySelectorAll('.nav-btn').forEach(btn => {
-                btn.classList.remove('active');
-                if(btn.innerText.toLowerCase() === view) btn.classList.add('active');
-            });
-        
-            // Update placeholder text dynamically
-            const bar = document.getElementById('search-bar');
-            bar.placeholder = view === 'shows' ? "Filter shows..." : "Search songs...";
-            
-            renderList("");
-        }
-
-        // Function to handle clicking a result
-        function playFromList(index, fullList) {
-            // 1. Set the global playlist to the current search results
-            // We only map the identifiers (show[1])
-            currentPlaylist = fullList.map(item => item.id || item[1]);
-            playlistIndex = index;
-        
-            // 2. Start the first one
-            loadShow(currentPlaylist[playlistIndex]);
-        }
 
         let currentOffset = 50; 
         let lastSearchQuery = "";
