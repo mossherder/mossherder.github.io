@@ -225,6 +225,25 @@
             font-size: 0.85rem;
             color: #8e8e93;
         }
+
+        .list-item.active {
+            background-color: #f2f2f7; /* Subtle highlight */
+        }
+        
+        .list-item.active .primary-text,
+        .list-item.active span[style*="color: rgb(0, 122, 255)"] {
+            font-weight: 800; /* Extra bold */
+            color: #000 !important;
+        }
+        
+        /* Light indicator using :after */
+        .list-item.active::after {
+            content: " ● Now Playing";
+            font-size: 0.7rem;
+            color: #007aff;
+            font-weight: bold;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
@@ -370,6 +389,8 @@
             isPlaying = true;
             document.getElementById('play-pause').innerText = "Pause";
             
+            // Trigger the light UI update
+            updateActiveRow();
             // Close search/list if on mobile to show player better (Optional)
             // closeSearch(); 
         }
@@ -717,6 +738,37 @@
                 });
             
                 if (append) currentOffset += 50;
+            }
+        }
+        
+        function updateActiveRow() {
+            // 1. Remove 'active' from whoever had it previously
+            const previousActive = document.querySelector('.list-item.active');
+            if (previousActive) previousActive.classList.remove('active');
+        
+            const listElement = document.getElementById('results-list');
+            const rows = listElement.querySelectorAll('.list-item');
+        
+            let targetRow;
+        
+            if (playMode === 'show') {
+                // In "Show" mode, we might have a "Back" button at index 0.
+                // We find the row based on the trackIndex (the song's position in the show)
+                // We look for the row that doesn't have the "Back" text.
+                const trackRows = Array.from(rows).filter(row => !row.innerText.includes('←'));
+                targetRow = trackRows[trackIndex];
+            } else {
+                // In "Search" mode, we are navigating the search results.
+                // We find the row based on the playlistIndex (the position in search results)
+                targetRow = rows[playlistIndex % 50]; 
+            }
+        
+            // 2. Apply the active class
+            if (targetRow) {
+                targetRow.classList.add('active');
+                
+                // 3. Keep the list centered on the playing song
+                targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
         }
 
