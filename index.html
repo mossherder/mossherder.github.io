@@ -275,6 +275,8 @@
         const audio = document.getElementById('audio-player');
         const playBtn = document.getElementById('play-pause');
         const seekSlider = document.getElementById('seek-slider');
+
+        let currentShowInfo = ""; // New: To store "1977-05-08 - Barton Hall"
         
         const identifier = "gd1977-05-08.shure57.stevenson.29303.flac16";
         let playlist = [];
@@ -309,7 +311,12 @@
             try {
                 const response = await fetch(`https://archive.org/metadata/${identifier}`);
                 const data = await response.json();
-        
+                
+                // Format the show info string
+                const date = data.metadata.date || "";
+                const venue = data.metadata.venue || "";
+                currentShowInfo = `${date} ${venue}`.trim() || identifier;
+                        
                 // Filter and Sort tracks
                 const audioFiles = data.files
                     .filter(f => f.format === 'VBR MP3' || f.format === 'MP3')
@@ -352,6 +359,7 @@
         
             // Update UI
             document.getElementById('song-title').innerText = track.title;
+            document.getElementById('show-info').innerText = currentShowInfo; // Using our global variable
             
             // Audio logic
             audio.src = track.url;
