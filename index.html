@@ -278,31 +278,8 @@
 
         let currentShowInfo = ""; // New: To store "1977-05-08 - Barton Hall"
         
-        const identifier = "gd1977-05-08.shure57.stevenson.29303.flac16";
         let playlist = [];
         let currentIndex = 0;
-        
-        async function fetchShow() {
-            try {
-                const response = await fetch(`https://archive.org/metadata/${identifier}`);
-                const data = await response.json();
-        
-                // 1. Get Show Metadata
-                const showInfo = `${data.metadata.date} • ${data.metadata.venue}`;
-                document.getElementById('show-metadata').innerText = showInfo;
-        
-                // 2. Filter for audio files only and sort them alphabetically by name
-                playlist = data.files
-                    .filter(f => f.format === 'VBR MP3' || f.format === 'MP3')
-                    .sort((a, b) => a.name.localeCompare(b.name));
-        
-                // 3. Load the first track (index 0)
-                loadTrack(0);
-        
-            } catch (error) {
-                console.error("Error loading show:", error);
-            }
-        }
 
         async function loadShow(identifier, targetSong = null) {
             isBrowsingMainList = false; // Disable infinite scroll for the tracklist view
@@ -436,9 +413,6 @@
         
         // Auto-advance to next song when one ends
         audio.addEventListener('ended', nextTrack);
-        
-        // Initial Load
-        fetchShow();
         
         const loadingPercent = document.getElementById('loading-percent');
         
