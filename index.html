@@ -156,6 +156,34 @@
             width: 40px !important;
             min-width: 40px;
         }
+
+        #nav-mode .nav-btn {
+            flex: 1; /* Each button takes up 50% of the width */
+            height: 100%;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #007aff;
+            background: none;
+            border: none;
+            transition: background 0.2s;
+        }
+        
+        #nav-mode .nav-btn:active {
+            background: #f2f2f7; /* iOS highlight color */
+        }
+        
+        /* Ensure the control rows are sized properly */
+        .control-row {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            box-sizing: border-box; /* Prevents padding from breaking width */
+        }
     </style>
 </head>
 <body>
@@ -186,14 +214,13 @@
 
         <div class="footer-controls">
             <div id="nav-mode" class="control-row">
-                <button class="nav-btn active" onclick="switchView('shows')">Shows</button>
-                <button id="search-trigger" class="nav-btn" onclick="toggleSearch(true)">🔍 Search</button>
-                <button class="nav-btn" onclick="switchView('songs')">Songs</button>
+                <button class="nav-btn" onclick="openSearch('shows')">Shows</button>
+                <button class="nav-btn" onclick="openSearch('songs')">Songs</button>
             </div>
         
             <div id="search-mode" class="control-row search-hidden">
                 <input type="text" id="search-bar" placeholder="Filter..." autocomplete="off">
-                <button id="close-search" onclick="toggleSearch(false)">✕</button>
+                <button id="close-search" onclick="closeSearch()">✕</button>
             </div>
         </div>
     </div>
@@ -408,28 +435,42 @@
         });
 
 
-        function toggleSearch(show) {
+        let currentView = 'shows';
+
+        function openSearch(view) {
+            currentView = view;
+            
+            // 1. Update UI Elements
+            const navMode = document.getElementById('nav-mode');
+            const searchMode = document.getElementById('search-mode');
+            const searchInput = document.getElementById('search-bar');
+            
+            // 2. Set context-specific placeholder
+            searchInput.placeholder = (view === 'shows') ? "Search by date/venue..." : "Search by song...";
+            
+            // 3. Trigger Animations
+            navMode.classList.add('nav-hidden');
+            searchMode.classList.remove('search-hidden');
+            
+            // 4. Focus keyboard after slide finishes
+            setTimeout(() => searchInput.focus(), 300);
+        
+            // 5. Initial render for that view
+            renderList(""); 
+        }
+        
+        function closeSearch() {
             const navMode = document.getElementById('nav-mode');
             const searchMode = document.getElementById('search-mode');
             const searchInput = document.getElementById('search-bar');
         
-            if (show) {
-                // Slide Search In, Slide Nav Out
-                navMode.classList.add('nav-hidden');
-                searchMode.classList.remove('search-hidden');
-                
-                // Auto-focus the input so the keyboard pops up immediately
-                setTimeout(() => searchInput.focus(), 300);
-            } else {
-                // Slide Nav In, Slide Search Out
-                navMode.classList.remove('nav-hidden');
-                searchMode.classList.add('search-hidden');
-                
-                // Clear search when closing
-                searchInput.value = "";
-                renderList(""); 
-                searchInput.blur(); // Hide keyboard
-            }
+            // Slide back
+            navMode.classList.remove('nav-hidden');
+            searchMode.classList.add('search-hidden');
+            
+            // Clean up
+            searchInput.value = "";
+            searchInput.blur();
         }
         
         // Update switchView to reflect the active tab
