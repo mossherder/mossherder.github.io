@@ -381,14 +381,18 @@
         
         // Next/Prev functions now naturally trigger loadTrack
         function nextTrack() {
-            if (currentIndex < playlist.length - 1) {
-                loadTrack(currentIndex + 1);
+            if (playlistIndex < currentPlaylist.length - 1) {
+                playlistIndex++;
+                loadShow(currentPlaylist[playlistIndex]);
+            } else {
+                setStatus("End of Search Results");
             }
         }
         
         function prevTrack() {
-            if (currentIndex > 0) {
-                loadTrack(currentIndex - 1);
+            if (playlistIndex > 0) {
+                playlistIndex--;
+                loadShow(currentPlaylist[playlistIndex]);
             }
         }
         
