@@ -265,7 +265,11 @@
                 <span id="status-label">Initializing</span> 
                 <span id="loading-percent" hidden>0%</span>
             </p>
-            <p id="show-metadata" style="margin: 5px 0 0; font-size: 0.9rem; color: #666;">--</p>
+            <p id="show-metadata" 
+               style="margin: 5px 0 0; font-size: 0.9rem; color: #007aff; cursor: pointer; text-decoration: underline;" 
+               onclick="jumpToShow()">
+               --
+            </p>
         </div>
         
         
@@ -295,6 +299,8 @@
     <script>
         let currentPlaylist = []; // This stores the current queue of show identifiers
         let playlistIndex = 0;    // Where we are in the current queue
+
+        let currentShowIdentifier = ""; // Store the ID of the show currently playing
         
         const audio = document.getElementById('audio-player');
         const playBtn = document.getElementById('play-pause');
@@ -309,6 +315,7 @@
         
         async function loadShow(identifier, targetSong = null) {
             isBrowsingMainList = false; // Disable infinite scroll for the tracklist view
+            currentShowIdentifier = identifier; // Save this for the jumpToShow feature
             
             // If targetSong exists, we are in "Search" navigation mode
             playMode = targetSong ? 'search' : 'show';
@@ -848,6 +855,20 @@
                 }, 30);
             }
         });
+
+        function jumpToShow() {
+            if (!currentShowIdentifier) return;
+        
+            // Reset view flags
+            isBrowsingMainList = false;
+            currentView = 'shows';
+        
+            // Call loadShow without a targetSong to trigger the full tracklist render
+            loadShow(currentShowIdentifier);
+        
+            // If you have a search overlay or drawer, make sure it's open
+            // openSearch(); 
+        }
     </script>
     
 </body>
