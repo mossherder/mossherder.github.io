@@ -304,7 +304,7 @@
             }
         }
 
-        async function loadShow(identifier) {
+        async function loadShow(identifier, targetSong = null) {
             isBrowsingMainList = false; // Disable infinite scroll for the tracklist view
             
             const listElement = document.getElementById('results-list');
@@ -328,6 +328,18 @@
                     title: file.title || file.name,
                     url: `https://archive.org/download/${identifier}/${file.name}`
                 }));
+
+                if (targetSong) {
+                    const normalizedTarget = normalizeSongName(targetSong);
+                    const foundIndex = currentTracks.findIndex(t => 
+                        normalizeSongName(t.title).includes(normalizedTarget)
+                    );
+                    
+                    if (foundIndex !== -1) {
+                        playTrack(foundIndex);
+                        return;
+                    }
+                }
         
                 // Render the Song List
                 listElement.innerHTML = `
@@ -675,29 +687,58 @@
                 if (append) currentOffset += 50;
         
             } else {
-                // Song View Logic
-                const allSongs = Object.keys(MASTER_DATA_CLEANED.songs).filter(name => 
+                // 1. Find all song names that match the query
+                const songNames = Object.keys(MASTER_DATA_CLEANED.songs).filter(name => 
                     name.toLowerCase().includes(q)
                 );
-                
+            
+                // 2. Create a flattened list of every instance of those songs
+                // Format: { date: "1977-05-08", venue: "Barton Hall", id: "...", songName: "Terrapin Station" }
+                let flattenedMatches = [];
+                songNames.forEach(name => {
+                    const indices = MASTER_DATA_CLEANED.songs[name];
+                    indices.forEach(idx => {
+                        const show = MASTER_DATA_CLEANED.shows[idx];
+                        flattenedMatches.push({
+                            date: show[0],
+                            id: show[1],
+                            venue: show[2],
+                            songName: name
+                        });
+                    });
+                });
+            
+                // 3. Sort by date (newest first usually feels better for songs)
+                flattenedMatches.sort((a, b) => b.date.localeCompare(a.date));
+            
+                // 4. Slice for infinite scroll
                 const start = append ? currentOffset : 0;
-                const page = allSongs.slice(start, start + 50);
-        
-                page.forEach(name => {
-                    const showCount = MASTER_DATA_CLEANED.songs[name].length;
+                const page = flattenedMatches.slice(start, start + 50);
+                
+                // Update the playlist context
+                lastFilteredResults = flattenedMatches;
+            
+                page.forEach((match, index) => {
                     const item = document.createElement('div');
                     item.className = 'list-item';
                     item.innerHTML = `
-                        <span class="primary-text">${name}</span>
-                        <span class="secondary-text">${showCount} versions available</span>
+                        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                            <span class="primary-text">${match.date}</span>
+                            <span style="font-size: 0.75rem; color: #007aff; font-weight: bold;">${match.songName}</span>
+                        </div>
+                        <span class="secondary-text">${match.venue}</span>
                     `;
+                    
                     item.onclick = () => {
-                        isBrowsingMainList = false; // Stop infinite scroll while in "Drill Down"
-                        showVersions(name);
+                        // Treat the flattened song search as the playlist
+                        currentPlaylist = lastFilteredResults.map(m => m.id);
+                        playlistIndex = index + start;// Pass the song name so loadShow can jump to it
+                        loadShow(currentPlaylist[playlistIndex], match.songName);
+                        closeSearch();
                     };
                     listElement.appendChild(item);
                 });
-        
+            
                 if (append) currentOffset += 50;
             }
         }
