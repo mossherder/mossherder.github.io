@@ -344,6 +344,11 @@
             }
         }
 
+        function normalizeSongName(name) {
+            if (!name) return "";
+            return name.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
+        }
+
         function playTrack(index) {
             if (index < 0 || index >= currentTracks.length) return;
             
