@@ -305,6 +305,8 @@
         }
 
         async function loadShow(identifier) {
+            isBrowsingMainList = false; // Disable infinite scroll for the tracklist view
+            
             const listElement = document.getElementById('results-list');
             listElement.innerHTML = `<div class="list-item">Loading tracklist...</div>`;
         
@@ -618,20 +620,41 @@
             // 2. Start the first one
             loadShow(currentPlaylist[playlistIndex]);
         }
+
+        let currentOffset = 50; 
+        let lastSearchQuery = "";
+        let isBrowsingMainList = true; // Set to false when in a show's tracklist
         
-        function renderList(query = "") {
+        function renderList(query = "", append = false) {
             const listElement = document.getElementById('results-list');
-            const q = query.toLowerCase().trim();
-            listElement.innerHTML = ""; // Clear current view
+            const container = document.getElementById('list-container');
+            
+            // 1. Reset or Update state
+            if (!append) {
+                listElement.innerHTML = "";
+                currentOffset = 50;
+                lastSearchQuery = query;
+                container.scrollTop = 0;
+                isBrowsingMainList = true; // We are back to the main list
+            }
+        
+            const q = lastSearchQuery.toLowerCase().trim();
         
             if (currentView === 'shows') {
-                // 1. Filter the master show list
-                lastFilteredResults = MASTER_DATA_CLEANED.shows.filter(show => 
+                // 2. Filter the entire master list first
+                const allMatches = MASTER_DATA_CLEANED.shows.filter(show => 
                     show[0].includes(q) || show[2].toLowerCase().includes(q)
-                ).slice(0, 100); 
+                );
+                
+                // 3. Take the slice for this "page"
+                const start = append ? currentOffset : 0;
+                const end = start + 50;
+                const page = allMatches.slice(start, end);
+                
+                // 4. Update the playlist context so Next/Prev works with the full filtered set
+                lastFilteredResults = allMatches; 
         
-                // 2. Render each show
-                lastFilteredResults.forEach((show, index) => {
+                page.forEach((show, index) => {
                     const item = document.createElement('div');
                     item.className = 'list-item';
                     item.innerHTML = `
@@ -639,25 +662,28 @@
                         <span class="secondary-text">${show[2]}</span>
                     `;
                     
-                    // When clicked, treat the current filtered results as the playlist
+                    // Note: index + start ensures we get the right position in the full filtered list
                     item.onclick = () => {
-                        currentPlaylist = lastFilteredResults.map(s => s[1]); // Map to identifiers
-                        playlistIndex = index;
+                        currentPlaylist = lastFilteredResults.map(s => s[1]);
+                        playlistIndex = index + start;
                         loadShow(currentPlaylist[playlistIndex]);
-                        closeSearch(); // Optional: close search bar once playing starts
+                        closeSearch();
                     };
                     listElement.appendChild(item);
                 });
         
-            } else {
-                // 1. Filter the song names (the keys in MASTER_DATA.songs)
-                const songNames = Object.keys(MASTER_DATA_CLEANED.songs);
-                const filteredSongNames = songNames.filter(name => 
-                    name.toLowerCase().includes(q)
-                ).slice(0, 100);
+                if (append) currentOffset += 50;
         
-                // 2. Render each song
-                filteredSongNames.forEach(name => {
+            } else {
+                // Song View Logic
+                const allSongs = Object.keys(MASTER_DATA_CLEANED.songs).filter(name => 
+                    name.toLowerCase().includes(q)
+                );
+                
+                const start = append ? currentOffset : 0;
+                const page = allSongs.slice(start, start + 50);
+        
+                page.forEach(name => {
                     const showCount = MASTER_DATA_CLEANED.songs[name].length;
                     const item = document.createElement('div');
                     item.className = 'list-item';
@@ -665,15 +691,15 @@
                         <span class="primary-text">${name}</span>
                         <span class="secondary-text">${showCount} versions available</span>
                     `;
-                    
-                    // Clicking a song drills down into its versions
-                    item.onclick = () => showVersions(name);
+                    item.onclick = () => {
+                        isBrowsingMainList = false; // Stop infinite scroll while in "Drill Down"
+                        showVersions(name);
+                    };
                     listElement.appendChild(item);
                 });
+        
+                if (append) currentOffset += 50;
             }
-            
-            // Always scroll back to top on search
-            document.getElementById('list-container').scrollTop = 0;
         }
 
         function showVersions(songName) {
@@ -714,6 +740,20 @@
         // Hook into the search bar from our previous sliding-search UI
         document.getElementById('search-bar').addEventListener('input', (e) => {
             renderList(e.target.value);
+        });
+
+        document.getElementById('list-container').addEventListener('scroll', function() {
+            const container = this;
+            
+            // Check if we are near the bottom
+            // scrollHeight (total height) - scrollTop (position) === clientHeight (visible window)
+            if (container.scrollTop + container.clientHeight >= container.scrollHeight - 100) {
+                // Only trigger if we aren't in a "Drill Down" view (like viewing tracks of a show)
+                // You can track this with a simple boolean
+                if (isBrowsingMainList) { 
+                    renderList(lastSearchQuery, true);
+                }
+            }
         });
     </script>
     
