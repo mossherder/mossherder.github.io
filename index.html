@@ -725,24 +725,32 @@
                 // Update the playlist context
                 lastFilteredResults = flattenedMatches;
             
-                page.forEach((match, index) => {
+                page.forEach((match, i) => {
                     const item = document.createElement('div');
                     item.className = 'list-item';
+                    
+                    // 1. Calculate the position ONCE and save it to the element
+                    const myPosition = start + i; 
+                
                     item.innerHTML = `
-                        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                        <div style="display: flex; justify-content: space-between; width: 100%;">
                             <span class="primary-text">${match.date}</span>
-                            <span style="font-size: 0.75rem; color: #007aff; font-weight: bold;">${match.songName}</span>
+                            <span style="color: #007aff;">${match.songName || ""}</span>
                         </div>
                         <span class="secondary-text">${match.venue}</span>
                     `;
                     
+                    // 2. The simple click: use the fixed values, not the scrolling variables
                     item.onclick = () => {
-                        // Treat the flattened song search as the playlist
-                        currentPlaylist = lastFilteredResults.map(m => m.id);
-                        playlistIndex = index + start;// Pass the song name so loadShow can jump to it
-                        loadShow(currentPlaylist[playlistIndex], match.songName);
-                        closeSearch();
+                        playlistIndex = myPosition; // Lock in the position
+                        loadShow(match.id, match.songName);
+                        if (window.closeSearch) closeSearch();
+                        
+                        // Remove blue from old row, add to this one immediately
+                        document.querySelector('.list-item.active')?.classList.remove('active');
+                        item.classList.add('active');
                     };
+                    
                     listElement.appendChild(item);
                 });
             
