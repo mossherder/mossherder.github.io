@@ -313,7 +313,13 @@
         let playMode = 'show'; // 'show' or 'search'
         
         async function loadShow(identifier, targetSong = null) {
-            isBrowsingMainList = false; // Disable infinite scroll for the tracklist view
+            // ONLY disable infinite scroll if we are switching to the Tracklist view
+            if (!targetSong) {
+                isBrowsingMainList = false; 
+            } else {
+                // If playing from search, ensure infinite scroll stays ALIVE
+                isBrowsingMainList = true;
+            }
             currentShowIdentifier = identifier; // Save this for the jumpToShow feature
             
             // If targetSong exists, we are in "Search" navigation mode
@@ -655,6 +661,7 @@
                 lastSearchQuery = query;
                 container.scrollTop = 0;
                 isBrowsingMainList = true; // We are back to the main list
+                renderList(lastSearchQuery); // Refresh the list
             }
         
             const q = lastSearchQuery.toLowerCase().trim();
