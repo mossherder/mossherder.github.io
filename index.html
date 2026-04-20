@@ -759,25 +759,31 @@
         }
         
         function updateActiveRow() {
-            // 1. Remove 'active' from whoever had it previously
+            // 1. Remove the highlight from whatever is currently active
             const previousActive = document.querySelector('.list-item.active');
             if (previousActive) previousActive.classList.remove('active');
         
             const listElement = document.getElementById('results-list');
             const rows = listElement.querySelectorAll('.list-item');
-            
-            // 2. Find the row that matches our CURRENTLY playing show
-            // This works even if you scrolled 5 miles away
-            const targetRow = Array.from(rows).find(row => 
-                row.dataset.id === currentShowIdentifier && 
-                (playMode === 'show' || normalizeSongName(row.dataset.song) === normalizeSongName(currentPlayingSongName))
-            );
         
+            let targetRow;
+        
+            if (playMode === 'show') {
+                // In Show Mode, we find the track by its index (skipping the "Back" button)
+                const trackRows = Array.from(rows).filter(row => !row.innerText.includes('←'));
+                targetRow = trackRows[trackIndex];
+            } else {
+                // In Search/Songs Mode, we find the row by its position in the list
+                // This matches the 'myPosition' we baked into the onclick earlier
+                targetRow = rows[playlistIndex % 50]; 
+            }
+        
+            // 2. Add the highlight to the new active row
             if (targetRow) {
                 targetRow.classList.add('active');
                 
-                // Optional: Only scroll into view if it's not already visible
-                targetRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                // 3. Scroll to it so it stays visible during auto-play
+                targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
         }
 
