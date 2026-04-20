@@ -757,27 +757,19 @@
         
             const listElement = document.getElementById('results-list');
             const rows = listElement.querySelectorAll('.list-item');
+            
+            // 2. Find the row that matches our CURRENTLY playing show
+            // This works even if you scrolled 5 miles away
+            const targetRow = Array.from(rows).find(row => 
+                row.dataset.id === currentShowIdentifier && 
+                (playMode === 'show' || normalizeSongName(row.dataset.song) === normalizeSongName(currentPlayingSongName))
+            );
         
-            let targetRow;
-        
-            if (playMode === 'show') {
-                // In "Show" mode, we might have a "Back" button at index 0.
-                // We find the row based on the trackIndex (the song's position in the show)
-                // We look for the row that doesn't have the "Back" text.
-                const trackRows = Array.from(rows).filter(row => !row.innerText.includes('←'));
-                targetRow = trackRows[trackIndex];
-            } else {
-                // In "Search" mode, we are navigating the search results.
-                // We find the row based on the playlistIndex (the position in search results)
-                targetRow = rows[playlistIndex % 50]; 
-            }
-        
-            // 2. Apply the active class
             if (targetRow) {
                 targetRow.classList.add('active');
                 
-                // 3. Keep the list centered on the playing song
-                targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Optional: Only scroll into view if it's not already visible
+                targetRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
         }
 
