@@ -10,7 +10,6 @@
     <meta name="mobile-web-app-status-bar-style" content="black-translucent">
     
     <script src="data-cleaned-names.js"></script>
-    <script src="data.js"></script>
     
     <style>
         :root {
@@ -208,9 +207,6 @@
             display: flex;
             flex-direction: column;
             gap: 4px;
-            /* This is a massive performance boost for long lists */
-            content-visibility: auto;
-            contain-intrinsic-size: 60px; /* Approximate height of one row */
         }
         
         .list-item:active {
@@ -233,7 +229,7 @@
         }
         
         .list-item.active .primary-text,
-        .list-item.active span[style*="color: rgb(0, 122, 255)"] {
+        .list-item.active .song-name {
             font-weight: 800; /* Extra bold */
             color: #000 !important;
         }
@@ -296,90 +292,104 @@
     </div>
     
     <script>
-        let currentPlaylist = []; // This stores the current queue of show identifiers
-        let playlistIndex = 0;    // Where we are in the current queue
-
-        let currentShowIdentifier = ""; // Store the ID of the show currently playing
-        
         const audio = document.getElementById('audio-player');
         const playBtn = document.getElementById('play-pause');
         const seekSlider = document.getElementById('seek-slider');
+        const loadingPercent = document.getElementById('loading-percent');
+        const statusLabel = document.getElementById('status-label');
 
-        let currentShowInfo = ""; // New: To store "1977-05-08 - Barton Hall"
-        
-        let playlist = [];
-        let currentIndex = 0;
+        // What is currently playing (only changes when a track is played, not when browsing)
+        let currentTracks = [];
+        let trackIndex = 0;
+        let currentShowInfo = "";       // e.g. "1977-05-08 Barton Hall"
+        let currentShowIdentifier = ""; // Archive.org ID of the playing show, for jumpToShow
+        let activeKey = null;           // Identifies the list row that should be highlighted
+        let activeTrackKey = null;      // The playing track's row in a show's tracklist
 
         let playMode = 'show'; // 'show' or 'search'
-        
-        async function loadShow(identifier, targetSong = null) {
-            // ONLY disable infinite scroll if we are switching to the Tracklist view
-            if (!targetSong) {
-                isBrowsingMainList = false; 
-            } else {
-                // If playing from search, ensure infinite scroll stays ALIVE
-                isBrowsingMainList = true;
-            }
-            currentShowIdentifier = identifier; // Save this for the jumpToShow feature
-            
-            // If targetSong exists, we are in "Search" navigation mode
-            playMode = targetSong ? 'search' : 'show';
-            
+        let searchPlaylist = [];  // Song results captured when a song was tapped, used by Next/Prev
+        let playlistIndex = 0;    // Where we are in searchPlaylist
+
+        let lastFilteredResults = []; // Results backing the list currently on screen
+        let loadToken = 0;            // Discards responses from superseded loadShow calls
+
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[c]);
+        }
+
+        async function loadShow(identifier, targetSong = null, rowKey = null) {
+            const token = ++loadToken;
+            const listElement = document.getElementById('results-list');
+
             try {
                 const response = await fetch(`https://archive.org/metadata/${identifier}`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
-                
+
+                // A newer loadShow started while we were waiting; drop this one
+                if (token !== loadToken) return;
+
                 // Format the show info string
                 const date = data.metadata.date || "";
                 const venue = data.metadata.venue || "";
-                currentShowInfo = `${date} ${venue}`.trim() || identifier;
-                        
+
                 // Filter and Sort tracks
                 const audioFiles = data.files
                     .filter(f => f.format === 'VBR MP3' || f.format === 'MP3')
                     .sort((a, b) => a.name.localeCompare(b.name));
-        
-                currentTracks = audioFiles.map(file => ({
-                    title: file.title || file.name,
-                    url: `https://archive.org/download/${identifier}/${file.name}`
-                }));
+
+                const show = {
+                    identifier,
+                    info: `${date} ${venue}`.trim() || identifier,
+                    tracks: audioFiles.map(file => ({
+                        title: file.title || file.name,
+                        url: `https://archive.org/download/${identifier}/${file.name}`
+                    }))
+                };
 
                 if (targetSong) {
                     const normalizedTarget = normalizeSongName(targetSong);
-                    const foundIndex = currentTracks.findIndex(t => 
+                    const foundIndex = show.tracks.findIndex(t =>
                         normalizeSongName(t.title).includes(normalizedTarget)
                     );
-                    
+
                     if (foundIndex !== -1) {
-                        playTrack(foundIndex);
+                        playFromShow(show, foundIndex, 'search', rowKey);
                         return;
                     }
                 }
-        
-                const listElement = document.getElementById('results-list');
-                listElement.innerHTML = `<div class="list-item">Loading tracklist...</div>`;
-            
-                // Render the Song List
+
+                // Render the Song List; infinite scroll must not append search results to it
+                isBrowsingMainList = false;
                 listElement.innerHTML = `
-                    <div class="list-item" style="color:#007aff; font-weight:bold;" onclick="renderList()">
-                        ← Back to Shows
+                    <div class="list-item" style="color:#007aff; font-weight:bold;" onclick="renderList(lastSearchQuery)">
+                        ← Back to ${currentView === 'songs' ? 'Songs' : 'Shows'}
                     </div>
                     <div style="padding:10px 20px; background:#f8f8f8; font-size:0.8rem; color:#666;">
-                        ${data.metadata.title || identifier}
+                        ${escapeHtml(data.metadata.title || identifier)}
                     </div>
                 `;
-        
-                currentTracks.forEach((track, index) => {
+
+                const fragment = document.createDocumentFragment();
+                show.tracks.forEach((track, index) => {
                     const item = document.createElement('div');
                     item.className = 'list-item';
-                    item.innerHTML = `<span class="primary-text">${track.title}</span>`;
-                    
-                    item.onclick = () => playTrack(index);
-                    listElement.appendChild(item);
+                    item.dataset.key = `track:${track.url}`;
+                    item.innerHTML = `<span class="primary-text">${escapeHtml(track.title)}</span>`;
+
+                    item.onclick = () => playFromShow(show, index, 'show');
+                    fragment.appendChild(item);
                 });
-        
+                listElement.appendChild(fragment);
+                updateActiveRow();
+
             } catch (e) {
-                listElement.innerHTML = `<div class="list-item">Error loading tracks.</div>`;
+                if (token !== loadToken) return;
+                console.error(e);
+                isBrowsingMainList = false;
+                listElement.innerHTML = `<div class="list-item" onclick="renderList(lastSearchQuery)">Error loading tracks. Tap to go back.</div>`;
             }
         }
 
@@ -388,40 +398,58 @@
             return name.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
         }
 
-        function playTrack(index) {
+        // Makes `show` the playing queue and starts track `index`
+        function playFromShow(show, index, mode, rowKey = null) {
+            currentTracks = show.tracks;
+            currentShowInfo = show.info;
+            currentShowIdentifier = show.identifier;
+            playMode = mode;
+            playTrack(index, rowKey);
+        }
+
+        function playTrack(index, rowKey = null) {
             if (index < 0 || index >= currentTracks.length) return;
-            
+
             trackIndex = index;
             const track = currentTracks[trackIndex];
-        
+            activeTrackKey = `track:${track.url}`;
+            activeKey = rowKey || activeTrackKey;
+
             // Update UI
             document.getElementById('song-title').innerText = track.title;
-            document.getElementById('show-metadata').innerText = currentShowInfo; // Using our global variable
-            
+            document.getElementById('show-metadata').innerText = currentShowInfo;
+
             // Audio logic
+            retryCount = 0;
+            loadingPercent.innerText = "0%";
             audio.src = track.url;
-            audio.play();
-            isPlaying = true;
-            document.getElementById('play-pause').innerText = "Pause";
-            
+            startPlayback();
+
             // Trigger the light UI update
             updateActiveRow();
-            // Close search/list if on mobile to show player better (Optional)
-            // closeSearch(); 
         }
-        
-        function togglePlay() {
-            if (!sessionStarted) sessionStarted = true; // Unlock audio session
-        
-            if (audio.paused) {
-                audio.play();
+
+        function startPlayback() {
+            audio.play().then(() => {
                 playBtn.innerText = "Pause";
+            }).catch(e => {
+                // Autoplay can be blocked until the user interacts; leave the button as Play
+                if (e.name !== 'AbortError') console.log("Playback blocked:", e);
+                playBtn.innerText = "Play";
+            });
+        }
+
+        function togglePlay() {
+            if (!audio.src) return;
+
+            if (audio.paused) {
+                startPlayback();
             } else {
                 audio.pause();
                 playBtn.innerText = "Play";
             }
         }
-        
+
         function nextTrack() {
             if (playMode === 'show') {
                 // Normal behavior: next song in the current show
@@ -429,16 +457,14 @@
                     playTrack(trackIndex + 1);
                 }
             } else {
-                // Search behavior: next item in the results list
-                if (playlistIndex < lastFilteredResults.length - 1) {
+                // Search behavior: next item in the song results the user played from
+                if (playlistIndex < searchPlaylist.length - 1) {
                     playlistIndex++;
-                    const nextMatch = lastFilteredResults[playlistIndex];
-                    // Load the new show and jump to that specific song name
-                    loadShow(nextMatch.id, nextMatch.songName);
+                    playSearchMatch(searchPlaylist[playlistIndex]);
                 }
             }
         }
-        
+
         function prevTrack() {
             if (playMode === 'show') {
                 if (trackIndex > 0) {
@@ -447,164 +473,111 @@
             } else {
                 if (playlistIndex > 0) {
                     playlistIndex--;
-                    const prevMatch = lastFilteredResults[playlistIndex];
-                    loadShow(prevMatch.id, prevMatch.songName);
+                    playSearchMatch(searchPlaylist[playlistIndex]);
                 }
             }
         }
-        
-        // Auto-advance when song ends
-        audio.onended = () => nextTrack();
-        
-        // This event is key for the "lean on autoplay" behavior
-        audio.addEventListener('ended', () => {
-            if (currentIndex < playlist.length - 1) {
-                nextTrack();
-            }
-        });
-        
-        function changeTime(amount) {
-            audio.currentTime += amount;
+
+        function searchKey(match) {
+            return `search:${match.id}|${match.songName}`;
         }
-        
+
+        function playSearchMatch(match) {
+            // Load the show and jump to that specific song name
+            activeKey = searchKey(match);
+            updateActiveRow();
+            loadShow(match.id, match.songName, activeKey);
+        }
+
+        // Auto-advance to next song when one ends
+        audio.addEventListener('ended', nextTrack);
+
+        function changeTime(amount) {
+            if (!isFinite(audio.duration)) return;
+            audio.currentTime = Math.min(Math.max(audio.currentTime + amount, 0), audio.duration);
+        }
+
         // Progress Bar Logic
         audio.addEventListener('timeupdate', () => {
             if (audio.duration) {
                 seekSlider.value = (audio.currentTime / audio.duration) * 100;
             }
         });
-        
+
         seekSlider.addEventListener('input', () => {
+            if (!isFinite(audio.duration)) return;
             audio.currentTime = (seekSlider.value / 100) * audio.duration;
         });
-        
-        // Auto-advance to next song when one ends
-        audio.addEventListener('ended', nextTrack);
-        
-        const loadingPercent = document.getElementById('loading-percent');
-        
-        // Update percentage as the file downloads
-        audio.addEventListener('progress', () => {
-            if (audio.duration > 0) {
-                for (let i = 0; i < audio.buffered.length; i++) {
-                    // Check the buffer range that contains the current play time
-                    if (audio.buffered.start(audio.buffered.length - 1 - i) < audio.currentTime) {
-                        const loaded = audio.buffered.end(audio.buffered.length - 1 - i);
-                        const percent = Math.round((loaded / audio.duration) * 100);
-                        loadingPercent.innerText = `${percent}%`;
-                        break;
-                    }
-                }
-            }
-        });
-        
-        // Show/Hide logic
-        audio.addEventListener('waiting', () => {
-            loadingPercent.hidden = false;
-        });
-        
-        // Hide percentage as soon as it's possible to start playing
-        audio.addEventListener('canplay', () => {
-            loadingPercent.hidden = true;
-        });
-        
-        // Use 'playing' as a backup to hide the percentage
-        audio.addEventListener('playing', () => {
-            loadingPercent.hidden = true;
-        });
-        
-        // Variable to track if the user has started the "audio session"
-        let sessionStarted = false;
-        
-        function loadTrack(index) {
-            if (index < 0 || index >= playlist.length) return;
-            
-            loadingPercent.innerText = "0%";
-            loadingPercent.hidden = false;
-            
-            currentIndex = index;
-            const track = playlist[currentIndex];
-            
-            // Update Source and UI
-            audio.src = `https://archive.org/download/${identifier}/${track.name}`;
-            document.getElementById('song-title').innerText = track.title || track.name;
-            
-            // Only attempt to autoplay if the user has interacted at least once
-            if (sessionStarted) {
-                audio.play().then(() => {
-                    playBtn.innerText = "Pause";
-                }).catch(e => {
-                    console.log("Autoplay blocked. User must click Play.");
-                    playBtn.innerText = "Play";
-                });
-            }
-        }
-
-        const statusLabel = document.getElementById('status-label');
 
         // Update Status Text
         const setStatus = (msg) => { statusLabel.innerText = msg; };
-        
+
         // 1. Triggered when the browser starts looking for the file
         audio.addEventListener('loadstart', () => {
             setStatus("Connecting to Archive.org...");
             loadingPercent.hidden = false;
         });
-        
+
         // 2. Triggered when the browser is actively downloading
         audio.addEventListener('progress', () => {
-            setStatus("Buffering...");
+            // Only report buffering while we can't play yet; otherwise this overwrites "Playing"
+            if (audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) setStatus("Buffering...");
             if (audio.duration > 0) {
+                // Find the buffered range that contains the current play time
                 for (let i = 0; i < audio.buffered.length; i++) {
-                    if (audio.buffered.start(audio.buffered.length - 1 - i) < audio.currentTime) {
-                        const loaded = audio.buffered.end(audio.buffered.length - 1 - i);
-                        const percent = Math.round((loaded / audio.duration) * 100);
+                    if (audio.buffered.start(i) <= audio.currentTime && audio.currentTime <= audio.buffered.end(i)) {
+                        const percent = Math.round((audio.buffered.end(i) / audio.duration) * 100);
                         loadingPercent.innerText = `${percent}%`;
                         break;
                     }
                 }
             }
         });
-        
+
         // 3. Triggered when playback stalls due to slow connection
         audio.addEventListener('waiting', () => {
             setStatus("Stalled: Waiting for data...");
             loadingPercent.hidden = false;
         });
-        
+
+        // Hide percentage as soon as it's possible to start playing
+        audio.addEventListener('canplay', () => {
+            loadingPercent.hidden = true;
+        });
+
         // 4. Triggered when it's actually playing
         audio.addEventListener('playing', () => {
-            retryCount = 0; 
+            retryCount = 0;
             setStatus("Playing");
             loadingPercent.hidden = true;
         });
-        
+
         // 5. Triggered if the link is dead or format is unsupported
         let retryCount = 0;
         const MAX_RETRIES = 3;
-        
+
         audio.addEventListener('error', () => {
             if (retryCount < MAX_RETRIES) {
                 retryCount++;
                 setStatus(`Connection lost. Retry ${retryCount}/${MAX_RETRIES}...`);
-                
+
                 // Short delay before retrying to give the server a "breather"
+                const failedSrc = audio.src;
                 setTimeout(() => {
-                    const currentSrc = audio.src;
-                    audio.src = ''; // Clear source
-                    audio.src = currentSrc; // Re-assign same source to force reload
-                    audio.load();
-                    audio.play().catch(e => console.log("Retry play blocked"));
-                }, 2000); 
+                    if (audio.src !== failedSrc) return; // User moved on to another track
+                    audio.load(); // Reloads the same source
+                    startPlayback();
+                }, 2000);
             } else {
                 setStatus("Error: Archive.org is not responding.");
                 loadingPercent.hidden = true;
             }
         });
-        
+
         // 6. Handle Manual Pause
         audio.addEventListener('pause', () => {
             if (!audio.ended) setStatus("Paused");
+            playBtn.innerText = "Play";
         });
 
 
@@ -612,222 +585,177 @@
 
         function openSearch(view) {
             currentView = view;
-            
+
             // 1. Update UI Elements
             const navMode = document.getElementById('nav-mode');
             const searchMode = document.getElementById('search-mode');
             const searchInput = document.getElementById('search-bar');
-            
+
             // 2. Set context-specific placeholder
             searchInput.placeholder = (view === 'shows') ? "Search by date/venue..." : "Search by song...";
-            
+
             // 3. Trigger Animations
             navMode.classList.add('nav-hidden');
             searchMode.classList.remove('search-hidden');
-            
+
             // 4. Focus keyboard after slide finishes
             setTimeout(() => searchInput.focus(), 300);
-        
+
             // 5. Initial render for that view
-            renderList(""); 
+            renderList("");
         }
-        
+
         function closeSearch() {
             const navMode = document.getElementById('nav-mode');
             const searchMode = document.getElementById('search-mode');
             const searchInput = document.getElementById('search-bar');
-        
+
             // Slide back
             navMode.classList.remove('nav-hidden');
             searchMode.classList.add('search-hidden');
-            
+
             // Clean up
             searchInput.value = "";
             searchInput.blur();
         }
 
-        let currentOffset = 50; 
+        const PAGE_SIZE = 50;
+        let currentOffset = 0;
         let lastSearchQuery = "";
         let isBrowsingMainList = true; // Set to false when in a show's tracklist
-        
-        function renderList(query = "", append = false) {
-            const listElement = document.getElementById('results-list');
-            const container = document.getElementById('list-container');
-            
-            // 1. Reset or Update state
-            if (!append) {
-                listElement.innerHTML = "";
-                currentOffset = 50;
-                lastSearchQuery = query;
-                container.scrollTop = 0;
-                isBrowsingMainList = true; // We are back to the main list
-            }
-        
-            const q = lastSearchQuery.toLowerCase().trim();
-        
-            if (currentView === 'shows') {
-                // 2. Filter the entire master list first
-                const allMatches = MASTER_DATA_CLEANED.shows.filter(show => 
-                    show[0].includes(q) || show[2].toLowerCase().includes(q)
-                );
-                
-                // 3. Take the slice for this "page"
-                const start = append ? currentOffset : 0;
-                const end = start + 50;
-                const page = allMatches.slice(start, end);
-                
-                // 4. Update the playlist context so Next/Prev works with the full filtered set
-                lastFilteredResults = allMatches; 
-        
-                page.forEach((show, index) => {
-                    const item = document.createElement('div');
-                    item.className = 'list-item';
-                    item.innerHTML = `
-                        <span class="primary-text">${show[0]}</span>
-                        <span class="secondary-text">${show[2]}</span>
-                    `;
-                    
-                    // Note: index + start ensures we get the right position in the full filtered list
-                    item.onclick = () => {
-                        currentPlaylist = lastFilteredResults.map(s => s[1]);
-                        playlistIndex = index + start;
-                        loadShow(currentPlaylist[playlistIndex]);
-                        closeSearch();
-                    };
-                    listElement.appendChild(item);
-                });
-        
-                if (append) currentOffset += 50;
-        
-            } else {
-                // 1. Find all song names that match the query
-                const songNames = Object.keys(MASTER_DATA_CLEANED.songs).filter(name => 
-                    name.toLowerCase().includes(q)
-                );
-            
-                // 2. Create a flattened list of every instance of those songs
-                // Format: { date: "1977-05-08", venue: "Barton Hall", id: "...", songName: "Terrapin Station" }
-                let flattenedMatches = [];
-                songNames.forEach(name => {
-                    const indices = MASTER_DATA_CLEANED.songs[name];
-                    indices.forEach(idx => {
+
+        // Every performance of every song, newest first. Built once: flattening and
+        // sorting ~36k entries is far too slow to repeat on every page of scrolling.
+        let allSongPerformances = null;
+        function getAllSongPerformances() {
+            if (!allSongPerformances) {
+                allSongPerformances = [];
+                for (const name in MASTER_DATA_CLEANED.songs) {
+                    MASTER_DATA_CLEANED.songs[name].forEach(idx => {
                         const show = MASTER_DATA_CLEANED.shows[idx];
-                        flattenedMatches.push({
+                        allSongPerformances.push({
                             date: show[0],
                             id: show[1],
                             venue: show[2],
                             songName: name
                         });
                     });
+                }
+                // ISO dates sort correctly as plain strings; localeCompare is much slower
+                allSongPerformances.sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+            }
+            return allSongPerformances;
+        }
+
+        function filterResults(view, q) {
+            if (view === 'shows') {
+                if (!q) return MASTER_DATA_CLEANED.shows;
+                return MASTER_DATA_CLEANED.shows.filter(show =>
+                    show[0].includes(q) || show[2].toLowerCase().includes(q)
+                );
+            }
+            const all = getAllSongPerformances();
+            if (!q) return all;
+            // Filtering the presorted list keeps it in date order without re-sorting
+            const matchingNames = new Set(Object.keys(MASTER_DATA_CLEANED.songs).filter(name =>
+                name.toLowerCase().includes(q)
+            ));
+            return all.filter(match => matchingNames.has(match.songName));
+        }
+
+        function renderList(query = "", append = false) {
+            const listElement = document.getElementById('results-list');
+            const container = document.getElementById('list-container');
+
+            // 1. Reset or Update state. Results are filtered once per query, not once per page.
+            if (!append) {
+                listElement.innerHTML = "";
+                currentOffset = 0;
+                lastSearchQuery = query;
+                container.scrollTop = 0;
+                isBrowsingMainList = true; // We are back to the main list
+                lastFilteredResults = filterResults(currentView, query.toLowerCase().trim());
+            }
+
+            // 2. Take the slice for this "page"
+            const start = currentOffset;
+            const page = lastFilteredResults.slice(start, start + PAGE_SIZE);
+            currentOffset += page.length;
+            isAtEnd = currentOffset >= lastFilteredResults.length;
+
+            const fragment = document.createDocumentFragment();
+
+            if (currentView === 'shows') {
+                page.forEach(show => {
+                    const item = document.createElement('div');
+                    item.className = 'list-item';
+                    item.innerHTML = `
+                        <span class="primary-text">${escapeHtml(show[0])}</span>
+                        <span class="secondary-text">${escapeHtml(show[2])}</span>
+                    `;
+
+                    item.onclick = () => {
+                        loadShow(show[1]);
+                        closeSearch();
+                    };
+                    fragment.appendChild(item);
                 });
-            
-                // 3. Sort by date (newest first usually feels better for songs)
-                flattenedMatches.sort((a, b) => b.date.localeCompare(a.date));
-            
-                // 4. Slice for infinite scroll
-                const start = append ? currentOffset : 0;
-                const page = flattenedMatches.slice(start, start + 50);
-                
-                // Update the playlist context
-                lastFilteredResults = flattenedMatches;
-            
+
+            } else {
+                const results = lastFilteredResults;
                 page.forEach((match, i) => {
                     const item = document.createElement('div');
                     item.className = 'list-item';
-                    
-                    // 1. Calculate the position ONCE and save it to the element
-                    const myPosition = start + i; 
-                
+                    item.dataset.key = searchKey(match);
+
+                    // Calculate the position ONCE so the click uses fixed values
+                    const myPosition = start + i;
+
                     item.innerHTML = `
                         <div style="display: flex; justify-content: space-between; width: 100%;">
-                            <span class="primary-text">${match.date}</span>
-                            <span style="color: #007aff;">${match.songName || ""}</span>
+                            <span class="primary-text">${escapeHtml(match.date)}</span>
+                            <span class="song-name" style="color: #007aff;">${escapeHtml(match.songName || "")}</span>
                         </div>
-                        <span class="secondary-text">${match.venue}</span>
+                        <span class="secondary-text">${escapeHtml(match.venue)}</span>
                     `;
-                    
-                    // 2. The simple click: use the fixed values, not the scrolling variables
+
                     item.onclick = () => {
-                        playlistIndex = myPosition; // Lock in the position
-                        loadShow(match.id, match.songName);
-                        if (window.closeSearch) closeSearch();
-                        
-                        // Remove blue from old row, add to this one immediately
-                        document.querySelector('.list-item.active')?.classList.remove('active');
-                        item.classList.add('active');
+                        // Lock in this result set as the playlist, so Next/Prev keep working
+                        // even after the user switches views or searches for something else
+                        searchPlaylist = results;
+                        playlistIndex = myPosition;
+                        playSearchMatch(match);
+                        closeSearch();
                     };
-                    
-                    listElement.appendChild(item);
+
+                    fragment.appendChild(item);
                 });
-            
-                if (append) currentOffset += 50;
             }
+
+            listElement.appendChild(fragment);
+            highlightActiveRow(false);
         }
-        
-        function updateActiveRow() {
-            // 1. Remove the highlight from whatever is currently active
-            const previousActive = document.querySelector('.list-item.active');
-            if (previousActive) previousActive.classList.remove('active');
-        
+
+        function highlightActiveRow(scroll) {
             const listElement = document.getElementById('results-list');
-            const rows = listElement.querySelectorAll('.list-item');
-        
-            let targetRow;
-        
-            if (playMode === 'show') {
-                // In Show Mode, we find the track by its index (skipping the "Back" button)
-                const trackRows = Array.from(rows).filter(row => !row.innerText.includes('←'));
-                targetRow = trackRows[trackIndex];
-            } else {
-                // In Search/Songs Mode, we find the row by its position in the list
-                // This matches the 'myPosition' we baked into the onclick earlier
-                targetRow = rows[playlistIndex]; 
-            }
-        
-            // 2. Add the highlight to the new active row
+            listElement.querySelector('.list-item.active')?.classList.remove('active');
+            const keys = [activeKey, activeTrackKey].filter(Boolean);
+            if (!keys.length) return;
+
+            const targetRow = listElement.querySelector(
+                keys.map(k => `.list-item[data-key="${CSS.escape(k)}"]`).join(', ')
+            );
             if (targetRow) {
                 targetRow.classList.add('active');
-                
-                // 3. Scroll to it so it stays visible during auto-play
-                targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Scroll to it so it stays visible during auto-play
+                if (scroll) targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
         }
 
-        function showVersions(songName) {
-            const listElement = document.getElementById('results-list');
-            const indices = MASTER_DATA_CLEANED.songs[songName];
-            
-            // Map indices to actual show data
-            const versions = indices.map(idx => MASTER_DATA_CLEANED.shows[idx]);
-            lastFilteredResults = versions; // Update current playlist context
-        
-            listElement.innerHTML = `
-                <div class="list-item" style="background:#f9f9f9; color:#007aff;" onclick="renderList()"> 
-                    <strong>← Back to all songs</strong>
-                </div>
-                <div style="padding: 10px 20px; font-size: 0.8rem; color: #888; background: #fff;">
-                    Showing all versions of: ${songName}
-                </div>
-            `;
-        
-            versions.forEach((show, index) => {
-                const item = document.createElement('div');
-                item.className = 'list-item';
-                item.innerHTML = `
-                    <span class="primary-text">${show[0]}</span>
-                    <span class="secondary-text">${show[2]}</span>
-                `;
-                
-                item.onclick = () => {
-                    currentPlaylist = versions.map(v => v[1]);
-                    playlistIndex = index;
-                    loadShow(currentPlaylist[playlistIndex]);
-                    closeSearch();
-                };
-                listElement.appendChild(item);
-            });
+        function updateActiveRow() {
+            highlightActiveRow(true);
         }
-        
+
         // Hook into the search bar from our previous sliding-search UI
         document.getElementById('search-bar').addEventListener('input', (e) => {
             renderList(e.target.value);
@@ -836,7 +764,7 @@
         let lastScrollTop = 0;
         let isLoadingMore = false;
         let isAtEnd = false;
-        
+
         document.getElementById('list-container').addEventListener('scroll', function() {
             const container = this;
             const currentST = container.scrollTop;
@@ -846,21 +774,21 @@
                 lastScrollTop = 0;
                 return;
             }
-        
+
             // 2. Only run logic if we are scrolling DOWN
             if (currentST <= lastScrollTop) {
                 lastScrollTop = currentST;
                 return;
             }
             lastScrollTop = currentST;
-            
+
             // 3. Existing Guards (End of data, already loading, etc.)
             if (isLoadingMore || !isBrowsingMainList || isAtEnd) return;
-        
+
             // 4. Threshold check
             if (currentST + container.clientHeight >= container.scrollHeight - 200) {
                 isLoadingMore = true;
-                
+
                 // Use a slight delay to let the scroll animation finish
                 setTimeout(() => {
                     renderList(lastSearchQuery, true);
@@ -871,34 +799,24 @@
 
         function jumpToShow() {
             if (!currentShowIdentifier) return;
-        
-            // Reset view flags
-            isBrowsingMainList = false;
+
             currentView = 'shows';
-        
+
             // Call loadShow without a targetSong to trigger the full tracklist render
             loadShow(currentShowIdentifier);
-        
-            // If you have a search overlay or drawer, make sure it's open
-            // openSearch(); 
         }
 
         document.addEventListener('DOMContentLoaded', () => {
             // 1. Set the default view
             currentView = 'shows';
-            
-            // 2. Ensure the toggle UI reflects 'shows' (if you have a toggle button)
-            const showsToggle = document.getElementById('toggle-shows'); // Update ID if different
-            if (showsToggle) showsToggle.classList.add('active');
-        
-            // 3. Kick off the initial render
-            // This will grab the first 50 shows from MASTER_DATA_CLEANED
-            renderList(""); 
 
-            // Inside your DOMContentLoaded listener:
+            // 2. Kick off the initial render
+            // This will grab the first 50 shows from MASTER_DATA_CLEANED
+            renderList("");
+
             document.getElementById('show-metadata').innerText = "Select a show to begin";
             document.getElementById('song-title').innerText = "Grateful Dead Player";
-            
+
             console.log("App initialized in Shows mode.");
         });
     </script>

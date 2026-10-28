@@ -62,39 +62,54 @@ for (let originalName in masterData.songs) {
 }
 
 // --- Convert back to Array and Rebuild MASTER_DATA ---
-const finalSongMap = {};
-let finalLinkCount = 0;
+// Different normalized keys can produce the same display name, so merge on
+// display name instead of overwriting (overwriting silently dropped links).
+const displayMap = {};
+const displayNameFor = {}; // original name -> display name, for verification
 
 for (let key in newSongMap) {
     const item = newSongMap[key];
-    const indicesArray = Array.from(item.indices);
-    finalSongMap[item.displayName] = indicesArray;
-    finalLinkCount += indicesArray.length;
+    if (!displayMap[item.displayName]) displayMap[item.displayName] = new Set();
+    item.indices.forEach(idx => displayMap[item.displayName].add(idx));
+}
+for (let originalName in masterData.songs) {
+    const normalized = normalizeSongName(originalName) || originalName.trim().toLowerCase();
+    displayNameFor[originalName] = newSongMap[normalized].displayName;
+}
+
+const finalSongMap = {};
+let finalLinkCount = 0;
+
+for (let name in displayMap) {
+    finalSongMap[name] = Array.from(displayMap[name]);
+    finalLinkCount += finalSongMap[name].length;
 }
 
 // --- Final Integrity Verification ---
+// Merging duplicates of the same song within a show legitimately lowers the
+// link count, so verify that every original (song, show) link is still reachable.
+let missing = 0;
+for (let originalName in masterData.songs) {
+    const merged = displayMap[displayNameFor[originalName]];
+    masterData.songs[originalName].forEach(idx => { if (!merged.has(idx)) missing++; });
+}
+
 console.log("-----------------------------------------");
 console.log(`New Unique Entries: ${Object.keys(finalSongMap).length}`);
 console.log(`Final Total Show-Song Links: ${finalLinkCount}`);
 
-if (finalLinkCount < originalLinkCount) {
-    console.error("CRITICAL ERROR: Data loss detected! Do not use output.");
-    
-    const output = {
-        shows: masterData.shows,
-        songs: finalSongMap
-    };
-
-    fs.writeFileSync('data-cleaned-names.js', `const MASTER_DATA = ${JSON.stringify(output)};`);
-    console.log("Success: data-cleaned-names.js has been generated.");
-} else {
-    console.log("Check Passed: No songs or show-links were dropped.");
-    
-    const output = {
-        shows: masterData.shows,
-        songs: finalSongMap
-    };
-
-    fs.writeFileSync('data-cleaned-names.js', `const MASTER_DATA = ${JSON.stringify(output)};`);
-    console.log("Success: data-cleaned-names.js has been generated.");
+if (missing > 0) {
+    console.error(`CRITICAL ERROR: ${missing} show-song links were dropped. Output not written.`);
+    process.exit(1);
 }
+
+console.log("Check Passed: No songs or show-links were dropped.");
+
+const output = {
+    shows: masterData.shows,
+    songs: finalSongMap
+};
+
+// index.html loads this alongside data.js, so it needs its own variable name.
+fs.writeFileSync('data-cleaned-names.js', `const MASTER_DATA_CLEANED = ${JSON.stringify(output)};`);
+console.log("Success: data-cleaned-names.js has been generated.");
