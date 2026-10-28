@@ -473,6 +473,39 @@
             font-weight: 500;
         }
 
+        /* The tab whose list is on screen */
+        #nav-mode .view-tab {
+            color: #8e8e93;
+        }
+
+        #nav-mode .view-tab.current {
+            color: #007aff;
+        }
+
+        #nav-mode #open-search {
+            flex: 0 1 auto;
+            min-width: 44px;
+            gap: 4px;
+            padding: 0 8px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        #open-search svg {
+            flex-shrink: 0;
+            width: 22px;
+            height: 22px;
+            fill: currentColor;
+        }
+
+        /* Shows the active filter so a filtered list isn't mistaken for the full one */
+        #search-summary {
+            max-width: 90px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         .list-item.active {
             background-color: #f2f2f7; /* Subtle highlight */
         }
@@ -550,8 +583,12 @@
     <div id="footer">
         <div class="footer-controls">
             <div id="nav-mode" class="control-row">
-                <button class="nav-btn" onclick="openSearch('shows')">Shows</button>
-                <button class="nav-btn" onclick="openSearch('songs')">Songs</button>
+                <button class="nav-btn view-tab" data-view="shows" onclick="showView('shows')">Shows</button>
+                <button class="nav-btn view-tab" data-view="songs" onclick="showView('songs')">Songs</button>
+                <button class="nav-btn" id="open-search" aria-label="Search" onclick="openSearch()">
+                    <svg viewBox="0 0 24 24"><path d="M10 3a7 7 0 0 1 5.6 11.2l5.1 5.1-1.4 1.4-5.1-5.1A7 7 0 1 1 10 3zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/></svg>
+                    <span id="search-summary"></span>
+                </button>
                 <button class="nav-btn sort-btn" onclick="toggleSort()">Oldest first</button>
             </div>
 
@@ -851,7 +888,12 @@
             });
         }
 
-        if ('mediaSession' in navigator) {
+        // Lock screen buttons. iOS shows either ±10s skip buttons or previous/next track
+        // buttons, and prefers the skip buttons whenever seek handlers exist, so those are
+        // explicitly removed. Handlers are re-registered whenever playback starts because
+        // iOS can drop them when the audio source changes.
+        function registerMediaSessionHandlers() {
+            if (!('mediaSession' in navigator)) return;
             const setHandler = (action, handler) => {
                 try { navigator.mediaSession.setActionHandler(action, handler); } catch (e) { /* unsupported action */ }
             };
@@ -859,10 +901,36 @@
             setHandler('pause', () => audio.pause());
             setHandler('nexttrack', nextTrack);
             setHandler('previoustrack', prevTrack);
+            setHandler('seekbackward', null);
+            setHandler('seekforward', null);
             setHandler('seekto', details => {
                 if (isFinite(audio.duration)) audio.currentTime = details.seekTime;
+                updatePositionState();
             });
         }
+
+        // Keeps the lock screen's progress bar and play/pause state accurate
+        function updatePositionState() {
+            if (!('mediaSession' in navigator)) return;
+            navigator.mediaSession.playbackState = audio.paused ? 'paused' : 'playing';
+            if (!navigator.mediaSession.setPositionState || !isFinite(audio.duration) || audio.duration <= 0) return;
+            try {
+                navigator.mediaSession.setPositionState({
+                    duration: audio.duration,
+                    playbackRate: audio.playbackRate,
+                    position: Math.min(audio.currentTime, audio.duration)
+                });
+            } catch (e) { /* invalid state while loading */ }
+        }
+
+        registerMediaSessionHandlers();
+        audio.addEventListener('playing', () => {
+            registerMediaSessionHandlers();
+            updatePositionState();
+        });
+        ['pause', 'loadedmetadata', 'seeked', 'ratechange'].forEach(event =>
+            audio.addEventListener(event, updatePositionState)
+        );
 
         // Auto-advance to next song when one ends
         audio.addEventListener('ended', nextTrack);
@@ -977,36 +1045,64 @@
             document.querySelectorAll('.sort-btn').forEach(btn => { btn.innerText = label; });
         }
 
-        function openSearch(view) {
+        const tabState = {}; // view -> { query, scrollTop } saved when leaving that tab
+
+        // Switches the list to Shows or Songs, without opening the search bar
+        function showView(view) {
+            if (isBrowsingMainList && renderedView === view) return; // Already there
+
+            if (!isBrowsingMainList && savedListState && savedListState.view === view) {
+                // Back from a tracklist: return to the same search and scroll position
+                goBack();
+                return;
+            }
+
+            // Each tab keeps its own search and scroll position, like Apple Music
+            if (isBrowsingMainList) {
+                tabState[renderedView] = {
+                    query: lastSearchQuery,
+                    scrollTop: document.getElementById('list-container').scrollTop
+                };
+            } else if (savedListState) {
+                tabState[savedListState.view] = savedListState;
+            }
+            const state = tabState[view] || { query: "", scrollTop: 0 };
+            currentView = view;
+            updateSortButtons();
+            renderList(state.query, state.scrollTop);
+        }
+
+        // Opens the search bar for the list on screen
+        function openSearch() {
             // 1. Update UI Elements
             const navMode = document.getElementById('nav-mode');
             const searchMode = document.getElementById('search-mode');
             const searchInput = document.getElementById('search-bar');
 
-            // 2. Set context-specific placeholder
-            searchInput.placeholder = (view === 'shows') ? "Search by date/venue..." : "Search by song...";
+            // 2. Searching from a tracklist searches the list it was opened from
+            if (!isBrowsingMainList) goBack();
 
-            // 3. Trigger Animations; the player is hidden while searching
+            // 3. Set context-specific placeholder and the current search
+            searchInput.placeholder = (currentView === 'shows') ? "Search by date/venue..." : "Search by song...";
+            searchInput.value = lastSearchQuery;
+
+            // 4. Trigger Animations; the player is hidden while searching
             navMode.classList.add('nav-hidden');
             searchMode.classList.remove('search-hidden');
             document.body.classList.add('searching');
 
-            // 4. Focus right away: iOS only opens the keyboard for a focus made during the tap
+            // 5. Focus right away: iOS only opens the keyboard for a focus made during the tap
             searchInput.focus({ preventScroll: true });
+        }
 
-            // 5. Pick up where we were: the same list and search, or the list we left for a
-            //    tracklist. Otherwise start a fresh list for that view.
-            if (isBrowsingMainList && renderedView === view) {
-                searchInput.value = lastSearchQuery;
-            } else if (!isBrowsingMainList && savedListState && savedListState.view === view) {
-                searchInput.value = savedListState.query;
-                goBack();
-            } else {
-                searchInput.value = "";
-                currentView = view;
-                updateSortButtons();
-                renderList("");
-            }
+        // Highlights the current tab and shows the active search, if any, on the search button
+        function updateNav() {
+            const view = isBrowsingMainList ? renderedView : (savedListState ? savedListState.view : currentView);
+            document.querySelectorAll('.view-tab').forEach(tab => {
+                tab.classList.toggle('current', tab.dataset.view === view);
+            });
+            const query = isBrowsingMainList ? lastSearchQuery.trim() : "";
+            document.getElementById('search-summary').textContent = query;
         }
 
         // Leaves search mode, keeping the current results on screen
@@ -1139,6 +1235,7 @@
 
             buildYearIndex();
             renderScrubber();
+            updateNav();
             container.scrollTop = scrollTop;
             renderVisibleRows();
         }
@@ -1157,6 +1254,7 @@
             listElement.className = '';
             listElement.style.height = '';
             document.getElementById('year-scrubber').hidden = true;
+            updateNav();
         }
 
         function goBack() {
