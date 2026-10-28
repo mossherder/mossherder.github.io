@@ -16,6 +16,8 @@
             /* Handles the "notch" and home indicator areas on modern iPhones */
             --safe-area-top: env(safe-area-inset-top);
             --safe-area-bottom: env(safe-area-inset-bottom);
+            /* Height of .player-container; measured in JS, this is just the starting guess */
+            --player-height: calc(265px + env(safe-area-inset-bottom));
         }
 
         body {
@@ -193,8 +195,7 @@
             top: 0;
             left: 0;
             right: 0;
-            /* Subtract the height of your player-container (approx 180px) */
-            bottom: 265px; 
+            bottom: var(--player-height);
             overflow-y: auto;
             background: #fff;
             /* Smooth scrolling for iOS */
@@ -279,7 +280,7 @@
             position: fixed;
             top: 0;
             right: 0;
-            bottom: 265px; /* Matches #list-container */
+            bottom: var(--player-height); /* Matches #list-container */
             width: 34px;
             display: flex;
             flex-direction: column;
@@ -1009,6 +1010,21 @@
                 renderVisibleRows();
             });
         }, { passive: true });
+
+        // Keep the list and scrubber ending exactly where the player starts. Its height
+        // depends on the device (e.g. the iPhone home indicator padding) and on how
+        // the track/show titles wrap, so measure it rather than hard-coding it.
+        const playerContainer = document.querySelector('.player-container');
+        let lastPlayerHeight = 0;
+        new ResizeObserver(() => {
+            const height = playerContainer.offsetHeight;
+            if (height === lastPlayerHeight) return;
+            lastPlayerHeight = height;
+            document.documentElement.style.setProperty('--player-height', `${height}px`);
+            renderedRange = [-1, -1];
+            renderVisibleRows();
+            if (isBrowsingMainList) renderScrubber();
+        }).observe(playerContainer);
 
         window.addEventListener('resize', () => {
             renderedRange = [-1, -1];
