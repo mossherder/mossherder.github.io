@@ -20,8 +20,6 @@
             /* Handles the "notch" and home indicator areas on modern iPhones */
             --safe-area-top: env(safe-area-inset-top);
             --safe-area-bottom: env(safe-area-inset-bottom);
-            /* Height of .player-container; measured in JS, this is just the starting guess */
-            --player-height: calc(265px + env(safe-area-inset-bottom));
         }
 
         body {
@@ -33,7 +31,20 @@
             -webkit-text-size-adjust: 100%;
             /* Smoother scrolling on iOS */
             -webkit-overflow-scrolling: touch;
-            padding-bottom: 150px;
+
+            /* Screen-height column: the list area takes whatever space the player leaves,
+               so the two can never overlap whatever the player's height turns out to be */
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #list-area {
+            flex: 1;
+            min-height: 0;
+            position: relative;
         }
         .spinner {
             display: inline-block;
@@ -53,10 +64,8 @@
         
         [hidden] { display: none !important; }
         .player-container {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
+            position: relative;
+            flex-shrink: 0;
             background: #ffffff;
             border-top: 1px solid #eee;
             padding: 15px 20px;
@@ -195,11 +204,8 @@
         }
 
         #list-container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: var(--player-height);
+            position: absolute;
+            inset: 0;
             overflow-y: auto;
             background: #fff;
             /* Smooth scrolling for iOS */
@@ -281,16 +287,17 @@
         }
 
         #year-scrubber {
-            position: fixed;
+            position: absolute;
             top: 0;
             right: 0;
-            bottom: var(--player-height); /* Matches #list-container */
+            bottom: 0;
             width: 34px;
             display: flex;
             flex-direction: column;
             padding: 6px 0;
             box-sizing: border-box;
             z-index: 10;
+            overflow: hidden;
             touch-action: none; /* Dragging scrubs instead of scrolling the page */
             user-select: none;
             -webkit-user-select: none;
@@ -299,6 +306,9 @@
 
         #year-scrubber span {
             flex: 1;
+            min-height: 0; /* Let labels share the height evenly instead of overflowing it */
+            overflow: hidden;
+            line-height: 1;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -361,10 +371,12 @@
     </style>
 </head>
 <body>
-    <div id="list-container">
-        <div id="results-list"></div>
+    <div id="list-area">
+        <div id="list-container">
+            <div id="results-list"></div>
+        </div>
+        <div id="year-scrubber" hidden></div>
     </div>
-    <div id="year-scrubber" hidden></div>
     <div id="year-bubble" hidden></div>
     
     <div class="player-container">
@@ -1015,26 +1027,17 @@
             });
         }, { passive: true });
 
-        // Keep the list and scrubber ending exactly where the player starts. Its height
-        // depends on the device (e.g. the iPhone home indicator padding) and on how
-        // the track/show titles wrap, so measure it rather than hard-coding it.
-        const playerContainer = document.querySelector('.player-container');
-        let lastPlayerHeight = 0;
+        // The list area shrinks or grows with the player (wrapping titles) and the screen
+        // (rotation, Safari toolbars), so re-fit the visible rows and scrubber labels
+        let lastListHeight = 0;
         new ResizeObserver(() => {
-            const height = playerContainer.offsetHeight;
-            if (height === lastPlayerHeight) return;
-            lastPlayerHeight = height;
-            document.documentElement.style.setProperty('--player-height', `${height}px`);
+            const height = document.getElementById('list-area').clientHeight;
+            if (height === lastListHeight) return;
+            lastListHeight = height;
             renderedRange = [-1, -1];
             renderVisibleRows();
             if (isBrowsingMainList) renderScrubber();
-        }).observe(playerContainer);
-
-        window.addEventListener('resize', () => {
-            renderedRange = [-1, -1];
-            renderVisibleRows();
-            if (isBrowsingMainList) renderScrubber();
-        });
+        }).observe(document.getElementById('list-area'));
 
         // --- Year scrubber (like the one in Photos) ---
         let yearIndex = []; // [{ year: '1977', index: first row of that year }] in list order
@@ -1056,8 +1059,9 @@
             scrubber.hidden = yearIndex.length < 2;
             if (scrubber.hidden) return;
 
-            // Label every year if there's room, otherwise every other one (the rest become dots)
-            const every = scrubber.clientHeight / yearIndex.length < 16 ? 2 : 1;
+            // Label every year if there's room, otherwise every 2nd/3rd/5th (the rest become dots)
+            const slot = scrubber.clientHeight / yearIndex.length;
+            const every = [1, 2, 3, 5, 10].find(n => slot * n >= 16) || 10;
             scrubber.innerHTML = yearIndex.map((entry, i) =>
                 `<span data-year="${entry.year}">${i % every === 0 ? entry.year.slice(2) : '•'}</span>`
             ).join("");
