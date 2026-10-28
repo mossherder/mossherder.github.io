@@ -35,7 +35,7 @@
             /* Screen-height column: the list area takes whatever space the player leaves,
                so the two can never overlap whatever the player's height turns out to be */
             height: 100vh;
-            height: 100dvh;
+            height: var(--app-height, 100dvh); /* --app-height is set while the keyboard is up */
             display: flex;
             flex-direction: column;
             overflow: hidden;
@@ -68,11 +68,8 @@
             flex-shrink: 0;
             background: #ffffff;
             border-top: 1px solid #eee;
-            padding: 15px 20px;
-            
-            /* Crucial for iPhone: adds extra padding for the "swipe bar" */
-            padding-bottom: calc(15px + env(safe-area-inset-bottom));
-            
+            padding: 0 16px;
+
             /* Adds a slight shadow so it pops against the content behind it */
             box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
             z-index: 1000;
@@ -117,9 +114,106 @@
             background-color: #0056b3;
         }
 
+        /* Nothing to show until a track has been played, and hidden while searching
+           (like Apple Music) so the results get the screen */
+        .player-container {
+            display: none;
+        }
+
+        body.has-track:not(.searching) .player-container {
+            display: block;
+        }
+
+        #full-player {
+            display: none;
+            padding-bottom: 12px;
+        }
+
+        body.player-expanded #full-player {
+            display: block;
+        }
+
+        body.player-expanded #mini-player {
+            display: none;
+        }
+
+        #mini-player {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            height: 56px;
+            cursor: pointer;
+        }
+
+        .mini-text {
+            flex: 1;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #mini-title {
+            font-weight: 600;
+            color: #1c1c1e;
+        }
+
+        #mini-show {
+            font-size: 0.85rem;
+            color: #8e8e93;
+            margin-left: 6px;
+        }
+
+        .mini-btn {
+            flex: 0 0 auto;
+            width: 44px;
+            min-width: 44px;
+            height: 44px;
+            background: none;
+            color: #1c1c1e;
+        }
+
+        .mini-btn svg {
+            width: 26px;
+            height: 26px;
+            fill: currentColor;
+        }
+
+        #collapse-player {
+            display: flex;
+            width: 100%;
+            height: 24px;
+            min-width: 0;
+            background: none;
+            border-radius: 0;
+        }
+
+        #collapse-player:active {
+            transform: none;
+        }
+
+        .grabber {
+            width: 40px;
+            height: 5px;
+            border-radius: 3px;
+            background: #c7c7cc;
+        }
+
+        #footer {
+            flex-shrink: 0;
+            background: #fff;
+            border-top: 1px solid #eee;
+            /* Room for the iPhone home indicator, except when the keyboard covers it */
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        body.keyboard-open #footer {
+            padding-bottom: 0;
+        }
+
         .footer-controls {
             position: relative;
-            height: 60px;
+            height: 52px;
             overflow: hidden; /* Clips the search bar when it's off-screen */
             background: #fff;
         }
@@ -155,24 +249,53 @@
             transform: translateX(-100%); /* Pushed off to the left */
         }
         
+        .search-field {
+            flex: 1;
+            min-width: 0;
+            position: relative;
+        }
+
         /* Styling the Search Input */
         #search-bar {
-            flex: 1;
+            width: 100%;
+            box-sizing: border-box;
             height: 40px;
             border: 1px solid #ddd;
             border-radius: 20px;
-            padding: 0 15px;
+            padding: 0 40px 0 15px; /* Right padding leaves room for the clear button */
             font-size: 1rem;
             outline: none;
             -webkit-appearance: none; /* Prevents iOS default styling */
         }
         
+        #clear-search {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 24px;
+            min-width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #c7c7cc;
+            color: #fff;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 0;
+        }
+
+        #clear-search:active {
+            background: #8e8e93;
+            transform: translateY(-50%);
+        }
+
         #close-search {
             background: none;
-            color: #888;
-            font-size: 1.2rem;
-            width: 40px !important;
-            min-width: 40px;
+            min-width: 0;
+            height: 40px;
+            padding: 0 4px;
+            font-size: 1rem;
+            font-weight: 600;
         }
 
         #nav-mode .nav-btn {
@@ -381,48 +504,68 @@
     
     <div class="player-container">
         <audio id="audio-player"></audio>
-        
-        <div id="track-info" style="text-align: center; margin-bottom: 20px;">
-            <h2 style="margin: 0; font-size: 1.2rem;">
-                <span id="song-title">Loading Show...</span>
-            </h2>
-            <p style="margin: 5px 0 0; font-size: 0.8rem; color: #888;">
-                <span id="status-label">Initializing</span> 
-                <span id="loading-percent" hidden>0%</span>
-            </p>
-            <p id="show-metadata" 
-               style="margin: 5px 0 0; font-size: 0.9rem; color: #007aff; cursor: pointer; text-decoration: underline;" 
-               onclick="jumpToShow()">
-               --
-            </p>
-        </div>
-        
-        
-        <input type="range" id="seek-slider" value="0" max="100" step="0.1" style="width: 100%;">
-        
-        <div style="display: flex; justify-content: space-around; align-items: center; margin-top: 15px;">
-            <button onclick="prevTrack()">Prev</button>
-            <button onclick="changeTime(-10)">-10s</button>
-            <button id="play-pause" onclick="togglePlay()" style="font-weight: bold; min-width: 60px;">Play</button>
-            <button onclick="changeTime(10)">+10s</button>
-            <button onclick="nextTrack()">Next</button>
+
+        <!-- One-line player; tap to expand -->
+        <div id="mini-player" onclick="expandPlayer()">
+            <div class="mini-text">
+                <span id="mini-title">Not playing</span>
+                <span id="mini-show"></span>
+            </div>
+            <button id="mini-play" class="mini-btn" aria-label="Play" onclick="event.stopPropagation(); togglePlay()"></button>
+            <button id="mini-next" class="mini-btn" aria-label="Next" onclick="event.stopPropagation(); nextTrack()"></button>
         </div>
 
+        <div id="full-player">
+            <button id="collapse-player" aria-label="Minimize player" onclick="collapsePlayer()">
+                <span class="grabber"></span>
+            </button>
+
+            <div id="track-info" style="text-align: center; margin-bottom: 12px;">
+                <h2 style="margin: 0; font-size: 1.2rem;">
+                    <span id="song-title">Loading Show...</span>
+                </h2>
+                <p style="margin: 5px 0 0; font-size: 0.8rem; color: #888;">
+                    <span id="status-label">Initializing</span>
+                    <span id="loading-percent" hidden>0%</span>
+                </p>
+                <p id="show-metadata"
+                   style="margin: 5px 0 0; font-size: 0.9rem; color: #007aff; cursor: pointer; text-decoration: underline;"
+                   onclick="jumpToShow()">
+                   --
+                </p>
+            </div>
+
+            <input type="range" id="seek-slider" value="0" max="100" step="0.1" style="width: 100%;">
+
+            <div style="display: flex; justify-content: space-around; align-items: center; margin-top: 12px;">
+                <button onclick="prevTrack()">Prev</button>
+                <button onclick="changeTime(-10)">-10s</button>
+                <button id="play-pause" onclick="togglePlay()" style="font-weight: bold; min-width: 60px;">Play</button>
+                <button onclick="changeTime(10)">+10s</button>
+                <button onclick="nextTrack()">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="footer">
         <div class="footer-controls">
             <div id="nav-mode" class="control-row">
                 <button class="nav-btn" onclick="openSearch('shows')">Shows</button>
                 <button class="nav-btn" onclick="openSearch('songs')">Songs</button>
                 <button class="nav-btn sort-btn" onclick="toggleSort()">Oldest first</button>
             </div>
-        
+
             <div id="search-mode" class="control-row search-hidden">
-                <input type="text" id="search-bar" placeholder="Filter..." autocomplete="off">
+                <div class="search-field">
+                    <input type="text" id="search-bar" placeholder="Filter..." autocomplete="off" enterkeyhint="search">
+                    <button id="clear-search" aria-label="Clear search" onclick="clearSearch()">✕</button>
+                </div>
                 <button class="sort-btn" onclick="toggleSort()">Oldest first</button>
-                <button id="close-search" onclick="closeSearch()">✕</button>
+                <button id="close-search" onclick="closeSearch()">Done</button>
             </div>
         </div>
     </div>
-    
+
     <script>
         const audio = document.getElementById('audio-player');
         const playBtn = document.getElementById('play-pause');
@@ -570,6 +713,9 @@
             // Update UI
             document.getElementById('song-title').innerText = track.title;
             document.getElementById('show-metadata').innerText = currentShowInfo;
+            document.getElementById('mini-title').innerText = track.title;
+            document.getElementById('mini-show').innerText = currentShowInfo;
+            document.body.classList.add('has-track');
             updateMediaSession(track);
 
             // Audio logic
@@ -582,14 +728,36 @@
             updateActiveRow();
         }
 
+        const PLAY_ICON = '<svg viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5z"/></svg>';
+        const PAUSE_ICON = '<svg viewBox="0 0 24 24"><path d="M6 4.5h4.5v15H6zM13.5 4.5H18v15h-4.5z"/></svg>';
+        const NEXT_ICON = '<svg viewBox="0 0 24 24"><path d="M4 5.5v13l9-6.5zM13 5.5v13l9-6.5z"/></svg>';
+        document.getElementById('mini-next').innerHTML = NEXT_ICON;
+
+        // Keeps the full and mini player buttons in sync
+        function setPlayingUI(playing) {
+            playBtn.innerText = playing ? "Pause" : "Play";
+            const miniPlay = document.getElementById('mini-play');
+            miniPlay.innerHTML = playing ? PAUSE_ICON : PLAY_ICON;
+            miniPlay.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+        }
+        setPlayingUI(false);
+
         function startPlayback() {
             audio.play().then(() => {
-                playBtn.innerText = "Pause";
+                setPlayingUI(true);
             }).catch(e => {
                 // Autoplay can be blocked until the user interacts; leave the button as Play
                 if (e.name !== 'AbortError') console.log("Playback blocked:", e);
-                playBtn.innerText = "Play";
+                setPlayingUI(false);
             });
+        }
+
+        function expandPlayer() {
+            document.body.classList.add('player-expanded');
+        }
+
+        function collapsePlayer() {
+            document.body.classList.remove('player-expanded');
         }
 
         function togglePlay() {
@@ -599,7 +767,7 @@
                 startPlayback();
             } else {
                 audio.pause();
-                playBtn.innerText = "Play";
+                setPlayingUI(false);
             }
         }
 
@@ -784,7 +952,7 @@
         // 6. Handle Manual Pause
         audio.addEventListener('pause', () => {
             if (!audio.ended) setStatus("Paused");
-            playBtn.innerText = "Play";
+            setPlayingUI(false);
         });
 
 
@@ -818,37 +986,73 @@
             // 2. Set context-specific placeholder
             searchInput.placeholder = (view === 'shows') ? "Search by date/venue..." : "Search by song...";
 
-            // 3. Trigger Animations
+            // 3. Trigger Animations; the player is hidden while searching
             navMode.classList.add('nav-hidden');
             searchMode.classList.remove('search-hidden');
+            document.body.classList.add('searching');
 
-            // 4. Focus keyboard after slide finishes
-            setTimeout(() => searchInput.focus(), 300);
+            // 4. Focus right away: iOS only opens the keyboard for a focus made during the tap
+            searchInput.focus({ preventScroll: true });
 
-            // 5. Coming back from a tracklist to the same view returns to where we were;
-            //    otherwise start a fresh list for that view
-            if (!isBrowsingMainList && savedListState && savedListState.view === view) {
+            // 5. Pick up where we were: the same list and search, or the list we left for a
+            //    tracklist. Otherwise start a fresh list for that view.
+            if (isBrowsingMainList && renderedView === view) {
+                searchInput.value = lastSearchQuery;
+            } else if (!isBrowsingMainList && savedListState && savedListState.view === view) {
                 searchInput.value = savedListState.query;
                 goBack();
             } else {
+                searchInput.value = "";
                 currentView = view;
                 updateSortButtons();
                 renderList("");
             }
         }
 
+        // Leaves search mode, keeping the current results on screen
         function closeSearch() {
             const navMode = document.getElementById('nav-mode');
             const searchMode = document.getElementById('search-mode');
-            const searchInput = document.getElementById('search-bar');
 
-            // Slide back
+            // Slide back and bring the player back
             navMode.classList.remove('nav-hidden');
             searchMode.classList.add('search-hidden');
+            document.body.classList.remove('searching');
 
-            // Clean up
+            document.getElementById('search-bar').blur();
+        }
+
+        // Clears the search and closes the keyboard, staying in search mode
+        function clearSearch() {
+            const searchInput = document.getElementById('search-bar');
             searchInput.value = "";
             searchInput.blur();
+            if (currentView !== renderedView || lastSearchQuery || !isBrowsingMainList) renderList("");
+        }
+
+        document.getElementById('search-bar').addEventListener('keydown', (e) => {
+            // The keyboard's Search key just closes the keyboard; results are already live
+            if (e.key === 'Enter') e.target.blur();
+        });
+
+        // With the keyboard up, iOS shrinks only the visual viewport and pushes the page up,
+        // leaving room for about one row. Size the app to the visible area instead so the
+        // results fill the space between the top of the screen and the search bar.
+        if (window.visualViewport) {
+            const fitToVisibleArea = () => {
+                const vv = window.visualViewport;
+                const keyboardOpen = vv.scale < 1.05 &&
+                    document.documentElement.clientHeight - vv.height > 120;
+                document.body.classList.toggle('keyboard-open', keyboardOpen);
+                if (keyboardOpen) {
+                    document.documentElement.style.setProperty('--app-height', `${vv.height}px`);
+                    window.scrollTo(0, 0);
+                } else {
+                    document.documentElement.style.removeProperty('--app-height');
+                }
+            };
+            window.visualViewport.addEventListener('resize', fitToVisibleArea);
+            window.visualViewport.addEventListener('scroll', fitToVisibleArea);
         }
 
         // The shows/songs lists are virtualized: rows have a fixed height and only the ones
