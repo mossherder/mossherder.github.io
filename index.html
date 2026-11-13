@@ -44,7 +44,52 @@
         #list-area {
             flex: 1;
             min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #list-body {
+            flex: 1;
+            min-height: 0;
             position: relative;
+        }
+
+        /* Back button and title above a song's performances */
+        #list-header {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            height: 48px;
+            padding: 0 12px 0 4px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+        }
+
+        #list-header button {
+            flex-shrink: 0;
+            height: 40px;
+            min-width: 0;
+            padding: 0 8px;
+            background: none;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        #list-header-title {
+            flex: 1;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-weight: 700;
+            color: #1c1c1e;
+        }
+
+        #list-header-count {
+            flex-shrink: 0;
+            font-size: 0.85rem;
+            color: #8e8e93;
         }
         .spinner {
             display: inline-block;
@@ -528,10 +573,17 @@
 </head>
 <body>
     <div id="list-area">
-        <div id="list-container">
-            <div id="results-list"></div>
+        <div id="list-header" hidden>
+            <button onclick="backToSongs()">‹ Songs</button>
+            <span id="list-header-title"></span>
+            <span id="list-header-count"></span>
         </div>
-        <div id="year-scrubber" hidden></div>
+        <div id="list-body">
+            <div id="list-container">
+                <div id="results-list"></div>
+            </div>
+            <div id="year-scrubber" hidden></div>
+        </div>
     </div>
     <div id="year-bubble" hidden></div>
     
@@ -619,6 +671,7 @@
         let activeTrackKey = null;      // The playing track's row in a show's tracklist
 
         let playMode = 'show'; // 'show' or 'search'
+        let playingSong = null;   // Song name when playing from a song's performances, for the songs list highlight
         let searchPlaylist = [];  // Song results captured when a song was tapped, used by Next/Prev
         let playlistIndex = 0;    // Where we are in searchPlaylist
 
@@ -700,10 +753,11 @@
         function renderTracklist(show) {
             leaveMainList();
             const listElement = document.getElementById('results-list');
-            const backView = savedListState ? savedListState.view : currentView;
+            const back = savedListState || { view: currentView, song: currentSong };
+            const backLabel = back.song || (back.view === 'songs' ? 'Songs' : 'Shows');
             listElement.innerHTML = `
                 <div class="list-item" style="color:#007aff; font-weight:bold;" onclick="goBack()">
-                    ← Back to ${backView === 'songs' ? 'Songs' : 'Shows'}
+                    ← Back to ${escapeHtml(backLabel)}
                 </div>
                 <div style="padding:10px 20px; background:#f8f8f8; font-size:0.8rem; color:#666;">
                     ${escapeHtml(show.title)}
@@ -732,6 +786,7 @@
 
         // Makes `show` the playing queue and starts track `index`
         function playFromShow(show, index, mode, rowKey = null) {
+            playingSong = null;
             currentTracks = show.tracks;
             currentShowInfo = show.info;
             currentShowIdentifier = show.identifier;
@@ -860,6 +915,8 @@
                 if (trackIdx !== -1) {
                     playlistIndex = index;
                     playFromShow(show, trackIdx, 'search', searchKey(match));
+                    playingSong = match.songName;
+                    highlightActiveRow(false);
                     // Fetch the following show now, while the page is awake
                     const next = searchPlaylist[index + 1];
                     if (next) fetchShow(next.id).catch(() => {});
@@ -1025,23 +1082,34 @@
 
 
         let currentView = 'shows';
+        let currentSong = null; // In the Songs tab: the song whose performances are listed, or null for all songs
 
-        // Date order per view, remembered between visits
-        let sortOrder = { shows: 'asc', songs: 'desc' };
+        // Order per list, remembered between visits. 'songs' is a song's performances,
+        // 'songIndex' the list of all songs.
+        let sortOrder = { shows: 'asc', songs: 'desc', songIndex: 'alpha' };
         try {
             const saved = JSON.parse(localStorage.getItem('sortOrder'));
-            if (saved && saved.shows && saved.songs) sortOrder = saved;
+            if (saved) sortOrder = Object.assign(sortOrder, saved);
         } catch (e) { /* storage unavailable */ }
 
+        function sortKey() {
+            if (currentView === 'shows') return 'shows';
+            return currentSong ? 'songs' : 'songIndex';
+        }
+
+        const SORT_TOGGLE = { asc: 'desc', desc: 'asc', alpha: 'plays', plays: 'alpha' };
+        const SORT_LABEL = { asc: 'Oldest first', desc: 'Newest first', alpha: 'A–Z', plays: 'Most played' };
+
         function toggleSort() {
-            sortOrder[currentView] = sortOrder[currentView] === 'asc' ? 'desc' : 'asc';
+            const key = sortKey();
+            sortOrder[key] = SORT_TOGGLE[sortOrder[key]];
             try { localStorage.setItem('sortOrder', JSON.stringify(sortOrder)); } catch (e) { /* storage unavailable */ }
             updateSortButtons();
             renderList(isBrowsingMainList ? lastSearchQuery : "");
         }
 
         function updateSortButtons() {
-            const label = sortOrder[currentView] === 'asc' ? 'Oldest first' : 'Newest first';
+            const label = SORT_LABEL[sortOrder[sortKey()]];
             document.querySelectorAll('.sort-btn').forEach(btn => { btn.innerText = label; });
         }
 
@@ -1049,7 +1117,11 @@
 
         // Switches the list to Shows or Songs, without opening the search bar
         function showView(view) {
-            if (isBrowsingMainList && renderedView === view) return; // Already there
+            if (isBrowsingMainList && renderedView === view) {
+                // Tapping Songs while in a song's performances goes back to all songs
+                if (view === 'songs' && renderedSong) backToSongs();
+                return;
+            }
 
             if (!isBrowsingMainList && savedListState && savedListState.view === view) {
                 // Back from a tracklist: return to the same search and scroll position
@@ -1060,14 +1132,16 @@
             // Each tab keeps its own search and scroll position, like Apple Music
             if (isBrowsingMainList) {
                 tabState[renderedView] = {
+                    song: renderedSong,
                     query: lastSearchQuery,
                     scrollTop: document.getElementById('list-container').scrollTop
                 };
             } else if (savedListState) {
                 tabState[savedListState.view] = savedListState;
             }
-            const state = tabState[view] || { query: "", scrollTop: 0 };
+            const state = tabState[view] || { song: null, query: "", scrollTop: 0 };
             currentView = view;
+            currentSong = state.song || null;
             updateSortButtons();
             renderList(state.query, state.scrollTop);
         }
@@ -1083,7 +1157,7 @@
             if (!isBrowsingMainList) goBack();
 
             // 3. Set context-specific placeholder and the current search
-            searchInput.placeholder = (currentView === 'shows') ? "Search by date/venue..." : "Search by song...";
+            searchInput.placeholder = (currentView === 'songs' && !currentSong) ? "Search songs..." : "Search by date/venue...";
             searchInput.value = lastSearchQuery;
 
             // 4. Trigger Animations; the player is hidden while searching
@@ -1151,42 +1225,73 @@
             window.visualViewport.addEventListener('scroll', fitToVisibleArea);
         }
 
-        // The shows/songs lists are virtualized: rows have a fixed height and only the ones
-        // near the viewport exist in the DOM, so even the ~36k song performances scroll
-        // smoothly and the year scrubber can jump anywhere instantly.
+        // The lists are virtualized: rows have a fixed height and only the ones near the
+        // viewport exist in the DOM, so long lists scroll smoothly and the scrubber can
+        // jump anywhere instantly.
         const ROW_H = 72;
         const OVERSCAN = 15;
 
         let lastSearchQuery = "";
         let isBrowsingMainList = true; // false while a show's tracklist is on screen
         let renderedView = 'shows';    // the view lastFilteredResults belongs to
+        let renderedSong = null;       // the song whose performances are on screen, if any
         let renderedRange = [-1, -1];
         let savedListState = null;     // where to return to from a tracklist
+        let songIndexState = { query: "", scrollTop: 0 }; // the all-songs list, saved while viewing a song
 
-        // Every performance of every song, newest first. Built once: flattening and
-        // sorting ~36k entries is far too slow to repeat on every search.
-        let allSongPerformances = null;
-        function getAllSongPerformances() {
-            if (!allSongPerformances) {
-                allSongPerformances = [];
-                for (const name in MASTER_DATA_CLEANED.songs) {
-                    MASTER_DATA_CLEANED.songs[name].forEach(idx => {
-                        const show = MASTER_DATA_CLEANED.shows[idx];
-                        allSongPerformances.push({
-                            date: show[0],
-                            id: show[1],
-                            venue: show[2],
-                            songName: name
-                        });
-                    });
-                }
-                // ISO dates sort correctly as plain strings; localeCompare is much slower
-                allSongPerformances.sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
-            }
-            return allSongPerformances;
+        // Section letter for the scrubber: first letter or digit, ignoring leading punctuation
+        function songLetter(name) {
+            const m = name.normalize('NFD').match(/[a-z0-9]/i);
+            return m && /[a-z]/i.test(m[0]) ? m[0].toUpperCase() : '#';
         }
 
-        function filterResults(view, q, order) {
+        // One entry per unique song name, built once on first use
+        let songIndex = null; // { alpha: [...], plays: [...] }
+        function getSongIndex(order) {
+            if (!songIndex) {
+                const { shows, songs } = MASTER_DATA_CLEANED;
+                const entries = [];
+                for (const name in songs) {
+                    const indices = songs[name];
+                    let first = Infinity, last = -Infinity;
+                    for (const idx of indices) {
+                        if (idx < first) first = idx;
+                        if (idx > last) last = idx;
+                    }
+                    entries.push({
+                        name,
+                        lower: name.toLowerCase(),
+                        letter: songLetter(name),
+                        count: indices.length,
+                        firstYear: shows[first][0].slice(0, 4),
+                        lastYear: shows[last][0].slice(0, 4)
+                    });
+                }
+                const collator = new Intl.Collator('en', { sensitivity: 'base', ignorePunctuation: true, numeric: true });
+                const alpha = entries.sort((a, b) => collator.compare(a.name, b.name));
+                const plays = alpha.slice().sort((a, b) => b.count - a.count); // stable: ties stay A–Z
+                songIndex = { alpha, plays };
+            }
+            return songIndex[order] || songIndex.alpha;
+        }
+
+        // Every performance of one song, oldest first, cached per song
+        const songPerformances = new Map();
+        function getSongPerformances(name) {
+            if (!songPerformances.has(name)) {
+                const shows = MASTER_DATA_CLEANED.shows; // oldest first
+                const indices = (MASTER_DATA_CLEANED.songs[name] || []).slice().sort((a, b) => a - b);
+                songPerformances.set(name, indices.map(idx => ({
+                    date: shows[idx][0],
+                    id: shows[idx][1],
+                    venue: shows[idx][2],
+                    songName: name
+                })));
+            }
+            return songPerformances.get(name);
+        }
+
+        function filterResults(view, song, q, order) {
             let results;
             if (view === 'shows') {
                 // MASTER_DATA_CLEANED.shows is oldest first
@@ -1196,21 +1301,56 @@
                     : MASTER_DATA_CLEANED.shows;
                 return order === 'desc' ? results.slice().reverse() : results;
             }
-            const all = getAllSongPerformances(); // newest first
-            if (q) {
-                // Filtering the presorted list keeps it in date order without re-sorting
-                const matchingNames = new Set(Object.keys(MASTER_DATA_CLEANED.songs).filter(name =>
-                    name.toLowerCase().includes(q)
-                ));
-                results = all.filter(match => matchingNames.has(match.songName));
-            } else {
-                results = all;
+            if (song) {
+                const all = getSongPerformances(song); // oldest first
+                results = q
+                    ? all.filter(p => p.date.includes(q) || p.venue.toLowerCase().includes(q))
+                    : all;
+                return order === 'desc' ? results.slice().reverse() : results;
             }
-            return order === 'asc' ? results.slice().reverse() : results;
+            const all = getSongIndex(order);
+            return q ? all.filter(entry => entry.lower.includes(q)) : all;
         }
 
-        function rowDate(result) {
-            return Array.isArray(result) ? result[0] : result.date;
+        // Scrubber section of a row: its year, or its letter in the A–Z song list
+        function scrubKeyFor(view, song, order) {
+            if (view === 'shows') return result => result[0].slice(0, 4);
+            if (song) return result => result.date.slice(0, 4);
+            return order === 'alpha' ? result => result.letter : null;
+        }
+        let scrubKeyOf = null;
+
+        // Shows a song's performances
+        function openSong(name) {
+            songIndexState = {
+                query: lastSearchQuery,
+                scrollTop: document.getElementById('list-container').scrollTop
+            };
+            currentView = 'songs';
+            currentSong = name;
+            updateSortButtons();
+            renderList("", 0);
+        }
+
+        // Back from a song's performances to the list of all songs
+        function backToSongs() {
+            currentView = 'songs';
+            currentSong = null;
+            updateSortButtons();
+            renderList(songIndexState.query, songIndexState.scrollTop);
+            if (document.body.classList.contains('searching')) {
+                document.getElementById('search-bar').value = songIndexState.query;
+                document.getElementById('search-bar').placeholder = "Search songs...";
+            }
+        }
+
+        function updateListHeader() {
+            const header = document.getElementById('list-header');
+            header.hidden = !(isBrowsingMainList && renderedSong);
+            if (header.hidden) return;
+            const count = getSongPerformances(renderedSong).length;
+            document.getElementById('list-header-title').textContent = renderedSong;
+            document.getElementById('list-header-count').textContent = count === 1 ? '1 show' : `${count} shows`;
         }
 
         function renderList(query = "", scrollTop = 0) {
@@ -1220,8 +1360,12 @@
             lastSearchQuery = query;
             isBrowsingMainList = true;
             renderedView = currentView;
+            renderedSong = currentView === 'songs' ? currentSong : null;
             renderedRange = [-1, -1];
-            lastFilteredResults = filterResults(currentView, query.toLowerCase().trim(), sortOrder[currentView]);
+            const order = sortOrder[sortKey()];
+            lastFilteredResults = filterResults(renderedView, renderedSong, query.toLowerCase().trim(), order);
+            scrubKeyOf = scrubKeyFor(renderedView, renderedSong, order);
+            updateListHeader();
 
             listElement.innerHTML = "";
             if (lastFilteredResults.length) {
@@ -1246,6 +1390,7 @@
             if (isBrowsingMainList) {
                 savedListState = {
                     view: renderedView,
+                    song: renderedSong,
                     query: lastSearchQuery,
                     scrollTop: document.getElementById('list-container').scrollTop
                 };
@@ -1254,12 +1399,14 @@
             listElement.className = '';
             listElement.style.height = '';
             document.getElementById('year-scrubber').hidden = true;
+            updateListHeader();
             updateNav();
         }
 
         function goBack() {
-            const state = savedListState || { view: currentView, query: "", scrollTop: 0 };
+            const state = savedListState || { view: currentView, song: currentSong, query: "", scrollTop: 0 };
             currentView = state.view;
+            currentSong = state.view === 'songs' ? (state.song || null) : null;
             updateSortButtons();
             renderList(state.query, state.scrollTop);
         }
@@ -1285,6 +1432,14 @@
                             <span class="primary-text">${escapeHtml(result[0])}</span>
                             <span class="secondary-text">${escapeHtml(result[2])}</span>
                         </div>`;
+                } else if (!renderedSong) {
+                    const years = result.firstYear === result.lastYear
+                        ? result.firstYear : `${result.firstYear}–${result.lastYear}`;
+                    html += `
+                        <div class="list-item vrow" data-index="${i}" data-song="${escapeHtml(result.name)}" style="top:${top}px">
+                            <span class="primary-text">${escapeHtml(result.name)}</span>
+                            <span class="secondary-text">${result.count === 1 ? '1 show' : `${result.count} shows`} · ${years}</span>
+                        </div>`;
                 } else {
                     html += `
                         <div class="list-item vrow" data-index="${i}" data-key="${escapeHtml(searchKey(result))}" style="top:${top}px">
@@ -1309,6 +1464,8 @@
 
             if (renderedView === 'shows') {
                 loadShow(result[1]);
+            } else if (!renderedSong) {
+                openSong(result.name);
             } else {
                 // Lock in this result set as the playlist, so Next/Prev keep working
                 // even after the user switches views or searches for something else
@@ -1333,25 +1490,26 @@
         // (rotation, Safari toolbars), so re-fit the visible rows and scrubber labels
         let lastListHeight = 0;
         new ResizeObserver(() => {
-            const height = document.getElementById('list-area').clientHeight;
+            const height = document.getElementById('list-body').clientHeight;
             if (height === lastListHeight) return;
             lastListHeight = height;
             renderedRange = [-1, -1];
             renderVisibleRows();
             if (isBrowsingMainList) renderScrubber();
-        }).observe(document.getElementById('list-area'));
+        }).observe(document.getElementById('list-body'));
 
-        // --- Year scrubber (like the one in Photos) ---
-        let yearIndex = []; // [{ year: '1977', index: first row of that year }] in list order
+        // --- Year / letter scrubber (like the one in Photos) ---
+        let yearIndex = []; // [{ year: '1977' or 'B', index: first row of that section }] in list order
 
         function buildYearIndex() {
             yearIndex = [];
-            let previous = null;
+            if (!scrubKeyOf) return;
+            const seen = new Set();
             lastFilteredResults.forEach((result, i) => {
-                const year = rowDate(result).slice(0, 4);
-                if (year !== previous) {
-                    yearIndex.push({ year, index: i });
-                    previous = year;
+                const key = scrubKeyOf(result);
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    yearIndex.push({ year: key, index: i });
                 }
             });
         }
@@ -1365,7 +1523,7 @@
             const slot = scrubber.clientHeight / yearIndex.length;
             const every = [1, 2, 3, 5, 10].find(n => slot * n >= 16) || 10;
             scrubber.innerHTML = yearIndex.map((entry, i) =>
-                `<span data-year="${entry.year}">${i % every === 0 ? entry.year.slice(2) : '•'}</span>`
+                `<span data-year="${escapeHtml(entry.year)}">${i % every === 0 ? escapeHtml(entry.year.slice(-2)) : '•'}</span>`
             ).join("");
             currentScrubberYear = null;
             updateScrubberCurrentYear();
@@ -1373,15 +1531,15 @@
 
         let currentScrubberYear = null;
         function updateScrubberCurrentYear() {
-            if (!isBrowsingMainList || !lastFilteredResults.length) return;
+            if (!isBrowsingMainList || !lastFilteredResults.length || !scrubKeyOf) return;
             const container = document.getElementById('list-container');
             const index = Math.min(lastFilteredResults.length - 1, Math.floor(container.scrollTop / ROW_H));
-            const year = rowDate(lastFilteredResults[index]).slice(0, 4);
+            const year = scrubKeyOf(lastFilteredResults[index]);
             if (year === currentScrubberYear) return;
             currentScrubberYear = year;
             const scrubber = document.getElementById('year-scrubber');
             scrubber.querySelector('.current')?.classList.remove('current');
-            scrubber.querySelector(`[data-year="${year}"]`)?.classList.add('current');
+            scrubber.querySelector(`[data-year="${CSS.escape(year)}"]`)?.classList.add('current');
         }
 
         (function setUpScrubber() {
@@ -1437,8 +1595,10 @@
                 // Scroll to it so it stays visible during auto-play
                 if (scroll) targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
             } else if (currentShowIdentifier) {
-                // In the shows list, mark the show that's playing
-                listElement.querySelector(`.vrow[data-show="${CSS.escape(currentShowIdentifier)}"]`)?.classList.add('active');
+                // In the shows list, mark the show that's playing; in the songs list, the song
+                const selectors = [`.vrow[data-show="${CSS.escape(currentShowIdentifier)}"]`];
+                if (playingSong) selectors.push(`.vrow[data-song="${CSS.escape(playingSong)}"]`);
+                listElement.querySelector(selectors.join(', '))?.classList.add('active');
             }
         }
 
