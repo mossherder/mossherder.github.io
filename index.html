@@ -1365,7 +1365,7 @@
                         venue: shows[idx][2],
                         songName: name,          // official title
                         matchName,               // finds the track in the show
-                        title: isExtras ? matchName : name // shown on the row
+                        title: isExtras ? matchName : "" // shown on the row; the header already names the song
                     };
                 }));
             }
