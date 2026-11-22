@@ -518,13 +518,61 @@
             font-weight: 500;
         }
 
-        /* The tab whose list is on screen */
-        #nav-mode .view-tab {
-            color: #8e8e93;
+        /* Shows / Songs segmented control; the raised segment is the list on screen */
+        .view-switch {
+            flex: 1;
+            display: flex;
+            padding: 2px;
+            border-radius: 9px;
+            background: #e9e9ee;
         }
 
-        #nav-mode .view-tab.current {
-            color: #007aff;
+        .view-switch .view-tab {
+            flex: 1;
+            height: 34px;
+            min-width: 0;
+            border-radius: 7px;
+            background: none;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #3c3c43;
+            transition: background 0.2s, box-shadow 0.2s;
+        }
+
+        .view-switch .view-tab:active {
+            background: none;
+            transform: none;
+        }
+
+        .view-switch .view-tab.current {
+            background: #fff;
+            color: #000;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+        }
+
+        /* Separates the view switch from the list tools */
+        .nav-divider {
+            flex-shrink: 0;
+            width: 1px;
+            height: 26px;
+            margin: 0 6px 0 10px;
+            background: #d1d1d6;
+        }
+
+        /* Sort: the highlighted arrow is the current direction */
+        .sort-btn svg {
+            width: 24px;
+            height: 24px;
+        }
+
+        .sort-btn path {
+            fill: #c7c7cc;
+            transition: fill 0.2s;
+        }
+
+        .sort-btn.sort-up .arrow-up,
+        .sort-btn.sort-down .arrow-down {
+            fill: #007aff;
         }
 
         #nav-mode #open-search {
@@ -635,13 +683,16 @@
     <div id="footer">
         <div class="footer-controls">
             <div id="nav-mode" class="control-row">
-                <button class="nav-btn view-tab" data-view="shows" onclick="showView('shows')">Shows</button>
-                <button class="nav-btn view-tab" data-view="songs" onclick="showView('songs')">Songs</button>
+                <div class="view-switch" role="tablist">
+                    <button class="view-tab" role="tab" data-view="shows" onclick="showView('shows')">Shows</button>
+                    <button class="view-tab" role="tab" data-view="songs" onclick="showView('songs')">Songs</button>
+                </div>
+                <div class="nav-divider"></div>
                 <button class="nav-btn" id="open-search" aria-label="Search" onclick="openSearch()">
                     <svg viewBox="0 0 24 24"><path d="M10 3a7 7 0 0 1 5.6 11.2l5.1 5.1-1.4 1.4-5.1-5.1A7 7 0 1 1 10 3zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/></svg>
                     <span id="search-summary"></span>
                 </button>
-                <button class="nav-btn sort-btn" onclick="toggleSort()">Oldest first</button>
+                <button class="nav-btn sort-btn" aria-label="Sort" onclick="toggleSort()"><svg viewBox="0 0 24 24"><path class="arrow-up" d="M8 3l5 5H9.5v12h-3V8H3l5-5z"/><path class="arrow-down" d="M16 21l-5-5h3.5V4h3v12H21l-5 5z"/></svg></button>
             </div>
 
             <div id="search-mode" class="control-row search-hidden">
@@ -649,7 +700,7 @@
                     <input type="text" id="search-bar" placeholder="Filter..." autocomplete="off" enterkeyhint="search">
                     <button id="clear-search" aria-label="Clear search" onclick="clearSearch()">✕</button>
                 </div>
-                <button class="sort-btn" onclick="toggleSort()">Oldest first</button>
+                <button class="sort-btn" aria-label="Sort" onclick="toggleSort()"><svg viewBox="0 0 24 24"><path class="arrow-up" d="M8 3l5 5H9.5v12h-3V8H3l5-5z"/><path class="arrow-down" d="M16 21l-5-5h3.5V4h3v12H21l-5 5z"/></svg></button>
                 <button id="close-search" onclick="closeSearch()">Done</button>
             </div>
         </div>
@@ -1102,6 +1153,7 @@
 
         const SORT_TOGGLE = { asc: 'desc', desc: 'asc', alpha: 'plays', plays: 'alpha' };
         const SORT_LABEL = { asc: 'Oldest first', desc: 'Newest first', alpha: 'A–Z', plays: 'Most played' };
+        const SORT_UP = { asc: true, desc: false, alpha: true, plays: false }; // Which arrow is highlighted
 
         function toggleSort() {
             const key = sortKey();
@@ -1112,8 +1164,13 @@
         }
 
         function updateSortButtons() {
-            const label = SORT_LABEL[sortOrder[sortKey()]];
-            document.querySelectorAll('.sort-btn').forEach(btn => { btn.innerText = label; });
+            const order = sortOrder[sortKey()];
+            document.querySelectorAll('.sort-btn').forEach(btn => {
+                btn.classList.toggle('sort-up', SORT_UP[order]);
+                btn.classList.toggle('sort-down', !SORT_UP[order]);
+                btn.setAttribute('aria-label', `Sort: ${SORT_LABEL[order]}`);
+                btn.title = SORT_LABEL[order];
+            });
         }
 
         const tabState = {}; // view -> { query, scrollTop } saved when leaving that tab
@@ -1177,6 +1234,7 @@
             const view = isBrowsingMainList ? renderedView : (savedListState ? savedListState.view : currentView);
             document.querySelectorAll('.view-tab').forEach(tab => {
                 tab.classList.toggle('current', tab.dataset.view === view);
+                tab.setAttribute('aria-selected', tab.dataset.view === view);
             });
             const query = isBrowsingMainList ? lastSearchQuery.trim() : "";
             document.getElementById('search-summary').textContent = query;
