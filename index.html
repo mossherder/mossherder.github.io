@@ -1713,6 +1713,25 @@
 
             console.log("App initialized in Shows mode.");
         });
+
+        // Service worker: loads the latest deploy on launch, and when the Home Screen
+        // app is resumed, checks for a new version and reloads into it
+        if ('serviceWorker' in navigator) {
+            const hadController = !!navigator.serviceWorker.controller;
+            let reloading = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (!hadController || reloading) return; // first install: nothing to refresh
+                // Never interrupt a loaded track; the new version shows on the next launch
+                if (document.body.classList.contains('has-track')) return;
+                reloading = true;
+                location.reload();
+            });
+            navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden) reg.update().catch(() => {});
+                });
+            }).catch(() => {});
+        }
     </script>
     
 </body>
