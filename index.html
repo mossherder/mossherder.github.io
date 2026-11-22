@@ -726,9 +726,12 @@
             return showRequests.get(identifier);
         }
 
+        // Prefers a track titled exactly the song, then the first one that mentions it
         function findTrack(show, songName) {
             const normalizedTarget = normalizeSongName(songName);
-            return show.tracks.findIndex(t => normalizeSongName(t.title).includes(normalizedTarget));
+            const titles = show.tracks.map(t => normalizeSongName(t.title));
+            const exact = titles.indexOf(normalizedTarget);
+            return exact !== -1 ? exact : titles.findIndex(t => t.includes(normalizedTarget));
         }
 
         // Opens a show's tracklist
@@ -886,7 +889,7 @@
         }
 
         function searchKey(match) {
-            return `search:${match.id}|${match.songName}`;
+            return `search:${match.id}|${match.matchName}`;
         }
 
         // Plays searchPlaylist[index]. When stepping with Next/Prev/auto-advance (step = ±1),
@@ -911,7 +914,7 @@
                     if (token !== playToken) return;
                 }
 
-                const trackIdx = show ? findTrack(show, match.songName) : -1;
+                const trackIdx = show ? findTrack(show, match.matchName) : -1;
                 if (trackIdx !== -1) {
                     playlistIndex = index;
                     playFromShow(show, trackIdx, 'search', searchKey(match));
@@ -1245,31 +1248,44 @@
             return m && /[a-z]/i.test(m[0]) ? m[0].toUpperCase() : '#';
         }
 
-        // One entry per unique song name, built once on first use
+        // A performance in MASTER_DATA_CLEANED.songs is a show index, or [showIndex, archiveTitle]
+        // when the track in that show is titled differently from the official song name
+        const perfShow = p => typeof p === 'number' ? p : p[0];
+
+        // One entry per official song, built once on first use. The catch-all
+        // MASTER_DATA_CLEANED.extras entry always comes last.
         let songIndex = null; // { alpha: [...], plays: [...] }
         function getSongIndex(order) {
             if (!songIndex) {
-                const { shows, songs } = MASTER_DATA_CLEANED;
+                const { shows, songs, extras } = MASTER_DATA_CLEANED;
                 const entries = [];
+                let extrasEntry = null;
                 for (const name in songs) {
-                    const indices = songs[name];
+                    const perfs = songs[name];
                     let first = Infinity, last = -Infinity;
-                    for (const idx of indices) {
+                    for (const p of perfs) {
+                        const idx = perfShow(p);
                         if (idx < first) first = idx;
                         if (idx > last) last = idx;
                     }
-                    entries.push({
+                    const entry = {
                         name,
                         lower: name.toLowerCase(),
-                        letter: songLetter(name),
-                        count: indices.length,
+                        letter: name === extras ? '…' : songLetter(name),
+                        count: perfs.length,
+                        unit: name === extras ? 'track' : 'show',
                         firstYear: shows[first][0].slice(0, 4),
                         lastYear: shows[last][0].slice(0, 4)
-                    });
+                    };
+                    if (name === extras) extrasEntry = entry; else entries.push(entry);
                 }
                 const collator = new Intl.Collator('en', { sensitivity: 'base', ignorePunctuation: true, numeric: true });
                 const alpha = entries.sort((a, b) => collator.compare(a.name, b.name));
                 const plays = alpha.slice().sort((a, b) => b.count - a.count); // stable: ties stay A–Z
+                if (extrasEntry) {
+                    alpha.push(extrasEntry);
+                    plays.push(extrasEntry);
+                }
                 songIndex = { alpha, plays };
             }
             return songIndex[order] || songIndex.alpha;
@@ -1280,13 +1296,20 @@
         function getSongPerformances(name) {
             if (!songPerformances.has(name)) {
                 const shows = MASTER_DATA_CLEANED.shows; // oldest first
-                const indices = (MASTER_DATA_CLEANED.songs[name] || []).slice().sort((a, b) => a - b);
-                songPerformances.set(name, indices.map(idx => ({
-                    date: shows[idx][0],
-                    id: shows[idx][1],
-                    venue: shows[idx][2],
-                    songName: name
-                })));
+                const isExtras = name === MASTER_DATA_CLEANED.extras;
+                // Already sorted oldest first by cleanSongNames.js
+                songPerformances.set(name, (MASTER_DATA_CLEANED.songs[name] || []).map(p => {
+                    const idx = perfShow(p);
+                    const matchName = typeof p === 'number' ? name : p[1];
+                    return {
+                        date: shows[idx][0],
+                        id: shows[idx][1],
+                        venue: shows[idx][2],
+                        songName: name,          // official title
+                        matchName,               // finds the track in the show
+                        title: isExtras ? matchName : name // shown on the row
+                    };
+                }));
             }
             return songPerformances.get(name);
         }
@@ -1350,7 +1373,8 @@
             if (header.hidden) return;
             const count = getSongPerformances(renderedSong).length;
             document.getElementById('list-header-title').textContent = renderedSong;
-            document.getElementById('list-header-count').textContent = count === 1 ? '1 show' : `${count} shows`;
+            const unit = renderedSong === MASTER_DATA_CLEANED.extras ? 'track' : 'show';
+            document.getElementById('list-header-count').textContent = count === 1 ? `1 ${unit}` : `${count} ${unit}s`;
         }
 
         function renderList(query = "", scrollTop = 0) {
@@ -1438,14 +1462,14 @@
                     html += `
                         <div class="list-item vrow" data-index="${i}" data-song="${escapeHtml(result.name)}" style="top:${top}px">
                             <span class="primary-text">${escapeHtml(result.name)}</span>
-                            <span class="secondary-text">${result.count === 1 ? '1 show' : `${result.count} shows`} · ${years}</span>
+                            <span class="secondary-text">${result.count === 1 ? `1 ${result.unit}` : `${result.count} ${result.unit}s`} · ${years}</span>
                         </div>`;
                 } else {
                     html += `
                         <div class="list-item vrow" data-index="${i}" data-key="${escapeHtml(searchKey(result))}" style="top:${top}px">
                             <div class="row-line">
                                 <span class="primary-text">${escapeHtml(result.date)}</span>
-                                <span class="song-name">${escapeHtml(result.songName || "")}</span>
+                                <span class="song-name">${escapeHtml(result.title || "")}</span>
                             </div>
                             <span class="secondary-text">${escapeHtml(result.venue)}</span>
                         </div>`;
