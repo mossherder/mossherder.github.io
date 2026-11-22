@@ -1541,6 +1541,12 @@
         document.getElementById('results-list').addEventListener('click', (e) => {
             const row = e.target.closest('.vrow');
             if (!row) return;
+            // Taps on or just beside the year scrubber (or right after a scrub) never play a row
+            const scrubber = document.getElementById('year-scrubber');
+            if (!scrubber.hidden) {
+                if (performance.now() - lastScrubEnd < 400) return;
+                if (e.clientX >= scrubber.getBoundingClientRect().left - SCRUBBER_TAP_MARGIN) return;
+            }
             const index = Number(row.dataset.index);
             const result = lastFilteredResults[index];
 
@@ -1624,6 +1630,9 @@
             scrubber.querySelector(`[data-year="${CSS.escape(year)}"]`)?.classList.add('current');
         }
 
+        const SCRUBBER_TAP_MARGIN = 14; // px left of the scrubber where row taps are ignored
+        let lastScrubEnd = 0;
+
         (function setUpScrubber() {
             const scrubber = document.getElementById('year-scrubber');
             const bubble = document.getElementById('year-bubble');
@@ -1646,6 +1655,7 @@
             function endScrub() {
                 if (!scrubbing) return;
                 scrubbing = false;
+                lastScrubEnd = performance.now();
                 hideTimer = setTimeout(() => { bubble.hidden = true; }, 600);
             }
 

@@ -2,7 +2,7 @@
 // the latest deploy, with the cached copy as a fallback when slow or offline.
 // Change CACHE on every deploy — editing this file is what tells the browser
 // a new version exists.
-const CACHE = 'gd-v1';
+const CACHE = 'gd-v2';
 const SHELL = ['./', 'index.html', 'data-cleaned-names.js', 'favicon.png', 'apple-touch-icon.png'];
 const TIMEOUT = 2500;
 
