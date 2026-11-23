@@ -1144,6 +1144,7 @@
         try {
             const saved = JSON.parse(localStorage.getItem('sortOrder'));
             if (saved) sortOrder = Object.assign(sortOrder, saved);
+            if (sortOrder.songIndex === 'plays') sortOrder.songIndex = 'za'; // older saved order
         } catch (e) { /* storage unavailable */ }
 
         function sortKey() {
@@ -1151,9 +1152,9 @@
             return currentSong ? 'songs' : 'songIndex';
         }
 
-        const SORT_TOGGLE = { asc: 'desc', desc: 'asc', alpha: 'plays', plays: 'alpha' };
-        const SORT_LABEL = { asc: 'Oldest first', desc: 'Newest first', alpha: 'A–Z', plays: 'Most played' };
-        const SORT_UP = { asc: true, desc: false, alpha: true, plays: false }; // Which arrow is highlighted
+        const SORT_TOGGLE = { asc: 'desc', desc: 'asc', alpha: 'za', za: 'alpha' };
+        const SORT_LABEL = { asc: 'Oldest first', desc: 'Newest first', alpha: 'A–Z', za: 'Z–A' };
+        const SORT_UP = { asc: true, desc: false, alpha: true, za: false }; // Which arrow is highlighted
 
         function toggleSort() {
             const key = sortKey();
@@ -1312,7 +1313,7 @@
 
         // One entry per official song, built once on first use. The catch-all
         // MASTER_DATA_CLEANED.extras entry always comes last.
-        let songIndex = null; // { alpha: [...], plays: [...] }
+        let songIndex = null; // { alpha: [...], za: [...] }
         function getSongIndex(order) {
             if (!songIndex) {
                 const { shows, songs, extras } = MASTER_DATA_CLEANED;
@@ -1339,12 +1340,12 @@
                 }
                 const collator = new Intl.Collator('en', { sensitivity: 'base', ignorePunctuation: true, numeric: true });
                 const alpha = entries.sort((a, b) => collator.compare(a.name, b.name));
-                const plays = alpha.slice().sort((a, b) => b.count - a.count); // stable: ties stay A–Z
+                const za = alpha.slice().reverse();
                 if (extrasEntry) {
                     alpha.push(extrasEntry);
-                    plays.push(extrasEntry);
+                    za.push(extrasEntry);
                 }
-                songIndex = { alpha, plays };
+                songIndex = { alpha, za };
             }
             return songIndex[order] || songIndex.alpha;
         }
@@ -1393,11 +1394,11 @@
             return q ? all.filter(entry => entry.lower.includes(q)) : all;
         }
 
-        // Scrubber section of a row: its year, or its letter in the A–Z song list
+        // Scrubber section of a row: its year, or its letter in the song list
         function scrubKeyFor(view, song, order) {
             if (view === 'shows') return result => result[0].slice(0, 4);
             if (song) return result => result.date.slice(0, 4);
-            return order === 'alpha' ? result => result.letter : null;
+            return result => result.letter;
         }
         let scrubKeyOf = null;
 
