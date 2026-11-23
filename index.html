@@ -1144,7 +1144,7 @@
         try {
             const saved = JSON.parse(localStorage.getItem('sortOrder'));
             if (saved) sortOrder = Object.assign(sortOrder, saved);
-            if (sortOrder.songIndex === 'plays') sortOrder.songIndex = 'za'; // older saved order
+            if (sortOrder.songIndex === 'plays') sortOrder.songIndex = 'alpha'; // older saved order
         } catch (e) { /* storage unavailable */ }
 
         function sortKey() {
