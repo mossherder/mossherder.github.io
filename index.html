@@ -601,10 +601,24 @@
             display: none;
         }
 
+        /* Gray when off, blue while shuffling */
+        #nav-mode #shuffle-btn {
+            color: #8e8e93;
+            transition: color 0.2s;
+        }
+
+        #nav-mode #shuffle-btn.on {
+            color: #007aff;
+        }
+
         #shuffle-btn svg {
-            width: 22px;
-            height: 22px;
-            fill: currentColor;
+            width: 24px;
+            height: 24px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
         }
 
         /* Shows the active filter so a filtered list isn't mistaken for the full one */
@@ -708,8 +722,8 @@
                     <svg viewBox="0 0 24 24"><path d="M10 3a7 7 0 0 1 5.6 11.2l5.1 5.1-1.4 1.4-5.1-5.1A7 7 0 1 1 10 3zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/></svg>
                     <span id="search-summary"></span>
                 </button>
-                <button class="nav-btn" id="shuffle-btn" aria-label="Shuffle" title="Shuffle" onclick="shuffleSong()" hidden>
-                    <svg viewBox="0 0 24 24"><path d="M14.5 4H20v5.5l-2.1-2.1-3.4 3.4-1.4-1.4 3.4-3.4zM4 18.6 16.6 6l1.4 1.4L5.4 20zM14.5 20H20v-5.5l-2.1 2.1-3-3-1.4 1.4 3 3zM4 5.4 5.4 4l5 5L9 10.4z"/></svg>
+                <button class="nav-btn" id="shuffle-btn" aria-label="Shuffle" aria-pressed="false" title="Shuffle" onclick="toggleShuffle()" hidden>
+                    <svg viewBox="0 0 24 24"><path d="M3 7h3c5.5 0 6.5 10 12 10h2.5M3 17h3c5.5 0 6.5-10 12-10h2.5M18 4l3 3-3 3M18 14l3 3-3 3"/></svg>
                 </button>
                 <button class="nav-btn sort-btn" aria-label="Sort" onclick="toggleSort()"><svg viewBox="0 0 24 24"><path class="arrow-up" d="M8 3l5 5H9.5v12h-3V8H3l5-5z"/><path class="arrow-down" d="M16 21l-5-5h3.5V4h3v12H21l-5 5z"/></svg></button>
             </div>
@@ -865,6 +879,7 @@
             currentShowIdentifier = show.identifier;
             playMode = mode;
             playTrack(index, rowKey);
+            updateShuffleButton();
         }
 
         function playTrack(index, rowKey = null) {
@@ -1258,22 +1273,75 @@
             });
             const query = isBrowsingMainList ? lastSearchQuery.trim() : "";
             document.getElementById('search-summary').textContent = query;
-            // Shuffle is offered on a song's performances
-            document.getElementById('shuffle-btn').hidden = !(isBrowsingMainList && renderedSong);
+            updateShuffleButton();
         }
 
-        // Plays the performances on screen (the song, narrowed by any search) in random order
-        function shuffleSong() {
+        // Shuffle: plays a song's performances in random order. shuffledPlaylist is the
+        // random order and shuffleSource the same performances in list order, so turning
+        // shuffle off carries on in order from the one playing.
+        let shuffledPlaylist = null;
+        let shuffleSource = null;
+        let shuffledSong = null;
+
+        // On while the playing queue is still the shuffle (tapping a row or a show ends it)
+        function isShuffling() {
+            return shuffledPlaylist !== null && searchPlaylist === shuffledPlaylist && playMode === 'search';
+        }
+
+        // Offered on a song's performances; blue while that song is shuffling
+        function updateShuffleButton() {
+            const btn = document.getElementById('shuffle-btn');
+            btn.hidden = !(isBrowsingMainList && renderedSong);
+            const on = !btn.hidden && isShuffling() && shuffledSong === renderedSong;
+            btn.classList.toggle('on', on);
+            btn.setAttribute('aria-pressed', on);
+            btn.title = on ? 'Shuffle on' : 'Shuffle';
+        }
+
+        function toggleShuffle() {
+            if (isShuffling() && shuffledSong === renderedSong) stopShuffle(); else startShuffle();
+        }
+
+        // Shuffles the performances on screen (the song, narrowed by any search)
+        function startShuffle() {
             if (!isBrowsingMainList || !renderedSong || !lastFilteredResults.length) return;
-            const shuffled = lastFilteredResults.slice();
+            const source = lastFilteredResults;
+            const shuffled = source.slice();
             for (let i = shuffled.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
             }
+
+            // If one of these is already playing, keep it going and shuffle the rest after it
+            const playing = playMode === 'search' ? searchPlaylist[playlistIndex] : null;
+            const at = playing ? shuffled.indexOf(playing) : -1;
+            if (at > 0) [shuffled[0], shuffled[at]] = [shuffled[at], shuffled[0]];
+
+            shuffledPlaylist = shuffled;
+            shuffleSource = source;
+            shuffledSong = renderedSong;
             searchPlaylist = shuffled;
-            activeKey = searchKey(shuffled[0]);
-            highlightActiveRow(false);
-            playSearchIndex(0, 1); // Skips performances whose show has no matching track
+            if (at !== -1) {
+                playlistIndex = 0;
+                const next = shuffled[1];
+                if (next) fetchShow(next.id).catch(() => {});
+            } else {
+                activeKey = searchKey(shuffled[0]);
+                highlightActiveRow(false);
+                playSearchIndex(0, 1); // Skips performances whose show has no matching track
+            }
+            updateShuffleButton();
+        }
+
+        // Back to list order, continuing from the performance that's playing
+        function stopShuffle() {
+            const playing = searchPlaylist[playlistIndex];
+            searchPlaylist = shuffleSource;
+            playlistIndex = Math.max(0, shuffleSource.indexOf(playing));
+            shuffledPlaylist = shuffleSource = shuffledSong = null;
+            const next = searchPlaylist[playlistIndex + 1];
+            if (next) fetchShow(next.id).catch(() => {});
+            updateShuffleButton();
         }
 
         // Leaves search mode, keeping the current results on screen
@@ -1594,6 +1662,7 @@
                 // Lock in this result set as the playlist, so Next/Prev keep working
                 // even after the user switches views or searches for something else
                 searchPlaylist = lastFilteredResults;
+                updateShuffleButton();
                 activeKey = searchKey(result);
                 highlightActiveRow(false);
                 playSearchIndex(index, 0);
