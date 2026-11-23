@@ -591,6 +591,22 @@
             fill: currentColor;
         }
 
+        #nav-mode #shuffle-btn {
+            flex: 0 0 auto;
+            min-width: 44px;
+            padding: 0 8px;
+        }
+
+        #nav-mode #shuffle-btn[hidden] {
+            display: none;
+        }
+
+        #shuffle-btn svg {
+            width: 22px;
+            height: 22px;
+            fill: currentColor;
+        }
+
         /* Shows the active filter so a filtered list isn't mistaken for the full one */
         #search-summary {
             max-width: 90px;
@@ -691,6 +707,9 @@
                 <button class="nav-btn" id="open-search" aria-label="Search" onclick="openSearch()">
                     <svg viewBox="0 0 24 24"><path d="M10 3a7 7 0 0 1 5.6 11.2l5.1 5.1-1.4 1.4-5.1-5.1A7 7 0 1 1 10 3zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/></svg>
                     <span id="search-summary"></span>
+                </button>
+                <button class="nav-btn" id="shuffle-btn" aria-label="Shuffle" title="Shuffle" onclick="shuffleSong()" hidden>
+                    <svg viewBox="0 0 24 24"><path d="M14.5 4H20v5.5l-2.1-2.1-3.4 3.4-1.4-1.4 3.4-3.4zM4 18.6 16.6 6l1.4 1.4L5.4 20zM14.5 20H20v-5.5l-2.1 2.1-3-3-1.4 1.4 3 3zM4 5.4 5.4 4l5 5L9 10.4z"/></svg>
                 </button>
                 <button class="nav-btn sort-btn" aria-label="Sort" onclick="toggleSort()"><svg viewBox="0 0 24 24"><path class="arrow-up" d="M8 3l5 5H9.5v12h-3V8H3l5-5z"/><path class="arrow-down" d="M16 21l-5-5h3.5V4h3v12H21l-5 5z"/></svg></button>
             </div>
@@ -1144,7 +1163,7 @@
         try {
             const saved = JSON.parse(localStorage.getItem('sortOrder'));
             if (saved) sortOrder = Object.assign(sortOrder, saved);
-            if (sortOrder.songIndex === 'plays') sortOrder.songIndex = 'za'; // older saved order
+            if (sortOrder.songIndex === 'plays') sortOrder.songIndex = 'alpha'; // older saved order
         } catch (e) { /* storage unavailable */ }
 
         function sortKey() {
@@ -1239,6 +1258,22 @@
             });
             const query = isBrowsingMainList ? lastSearchQuery.trim() : "";
             document.getElementById('search-summary').textContent = query;
+            // Shuffle is offered on a song's performances
+            document.getElementById('shuffle-btn').hidden = !(isBrowsingMainList && renderedSong);
+        }
+
+        // Plays the performances on screen (the song, narrowed by any search) in random order
+        function shuffleSong() {
+            if (!isBrowsingMainList || !renderedSong || !lastFilteredResults.length) return;
+            const shuffled = lastFilteredResults.slice();
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            searchPlaylist = shuffled;
+            activeKey = searchKey(shuffled[0]);
+            highlightActiveRow(false);
+            playSearchIndex(0, 1); // Skips performances whose show has no matching track
         }
 
         // Leaves search mode, keeping the current results on screen
